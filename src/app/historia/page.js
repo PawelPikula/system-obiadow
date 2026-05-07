@@ -1,51 +1,50 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+
 export default function HistoriaPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalEmployeePaid: 0, count: 0 });
+  
+  // Stany do obsługi formularza opinii
+  const [reviewingItemId, setReviewingItemId] = useState(null);
+  const [tempRating, setTempRating] = useState(5);
+  const [tempReview, setTempReview] = useState('');
 
   useEffect(() => {
     fetchOrderHistory();
   }, []);
 
   async function fetchOrderHistory() {
-    // 1. Pobierz sesję
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       window.location.href = '/login';
       return;
     }
 
-    // 2. Pobierz zamówienia wraz z ich zawartością (join menu_items)
-    const { data: ordersData, error } = await supabase
+    // Pobieramy historię wraz z nowymi polami: rating i review_text
+    const { data: ordersData } = await supabase
       .from('orders')
       .select(`
-        id,
-        order_date,
-        total_price,
-        employee_paid,
-        employer_paid,
-        status,
+        id, order_date, delivery_date, total_price, employee_paid, employer_paid, status,
         order_items (
-          quantity,
+          id, quantity, rating, review_text,
           menu_items ( name )
         )
       `)
       .eq('profile_id', session.user.id)
-      .order('order_date', { ascending: false });
+      .order('delivery_date', { ascending: false });
 
     if (ordersData) {
       setOrders(ordersData);
       
-      // Oblicz statystyki dla bieżącego miesiąca
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
       
       const monthlyTotal = ordersData
         .filter(o => {
-          const d = new Date(o.order_date);
+          const d = new Date(o.delivery_date || o.order_date);
           return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
         })
         .reduce((sum, o) => sum + o.employee_paid, 0);
@@ -53,6 +52,21 @@ export default function HistoriaPage() {
       setStats({ totalEmployeePaid: monthlyTotal, count: ordersData.length });
     }
     setLoading(false);
+  }
+
+  // Funkcja zapisująca ocenę do bazy
+  async function submitReview(itemId) {
+    const { error } = await supabase
+      .from('order_items')
+      .update({ rating: tempRating, review_text: tempReview })
+      .eq('id', itemId);
+
+    if (error) {
+      alert("Błąd podczas zapisywania opinii: " + error.message);
+    } else {
+      setReviewingItemId(null);
+      fetchOrderHistory(); // Odświeżamy listę, żeby pokazać zapisaną opinię
+    }
   }
 
   if (loading) {
@@ -63,58 +77,116 @@ export default function HistoriaPage() {
     );
   }
 
+  const today = new Date().toISOString().split('T')[0];
+
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900">
       <div className="max-w-2xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Twoje Zamówienia 📝</h1>
-          <a href="/" className="text-blue-600 font-semibold text-sm">Wróć do menu</a>
+          <a href="/" className="text-blue-600 font-semibold text-sm hover:underline">Wróć do menu</a>
         </div>
 
         {/* Karta Podsumowania */}
-        <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-lg mb-8">
-          <p className="text-blue-100 text-sm uppercase font-bold tracking-wider">Do potrącenia w tym miesiącu:</p>
+        <div className="bg-blue-600 rounded-3xl p-6 text-white shadow-lg mb-8">
+          <p className="text-blue-100 text-sm uppercase font-bold tracking-wider">Wydatki w tym miesiącu:</p>
           <h2 className="text-4xl font-black mt-1">{stats.totalEmployeePaid.toFixed(2)} zł</h2>
-          <p className="text-blue-100 text-xs mt-2 italic">* Kwota po uwzględnieniu dofinansowania firmy</p>
         </div>
 
-        <h3 className="text-lg font-bold mb-4 text-slate-700">Ostatnie zamówienia:</h3>
+        <h3 className="text-lg font-bold mb-4 text-slate-700">Historia i oceny:</h3>
 
         {orders.length === 0 ? (
-          <div className="bg-white p-12 rounded-2xl text-center shadow-sm border border-slate-200">
-            <p className="text-slate-400 font-medium">Nie masz jeszcze żadnych zamówień.</p>
+          <div className="bg-white p-12 rounded-3xl text-center shadow-sm border border-slate-200">
+            <p className="text-slate-400 font-medium">Brak zamówień.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {orders.map((order) => (
-              <div key={order.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <p className="text-sm font-bold text-slate-400 uppercase">{order.order_date}</p>
-                    <div className="mt-1">
-                      {order.order_items.map((item, idx) => (
-                        <span key={idx} className="block text-slate-800 font-medium">
-                          {item.quantity}x {item.menu_items.name}
-                        </span>
-                      ))}
+            {orders.map((order) => {
+              // Sprawdzamy czy jedzenie już powinno być dostarczone (data dostawy <= dzisiaj)
+              const isDelivered = (order.delivery_date || order.order_date) <= today;
+
+              return (
+                <div key={order.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
+                  <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        Dostawa: <span className="text-slate-700">{order.delivery_date || order.order_date}</span>
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-black">{order.employee_paid.toFixed(2)} zł</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${
-                      order.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                    }`}>
-                      {order.status === 'paid_via_blik' ? 'Opłacone BLIK' : 'Na listę płac'}
-                    </span>
-                    <p className="text-xl font-black mt-2">{order.employee_paid.toFixed(2)} zł</p>
+                  
+                  <div className="space-y-4">
+                    {order.order_items.map((item) => (
+                      <div key={item.id} className="flex flex-col bg-slate-50 p-4 rounded-2xl">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-slate-800">
+                            {item.quantity}x {item.menu_items.name}
+                          </span>
+                          
+                          {/* Logika oceniania */}
+                          {item.rating ? (
+                            // Jeśli oceniono, pokazujemy gwiazdki
+                            <div className="flex items-center gap-2 text-yellow-500">
+                              <span className="font-black">{item.rating}/5 ⭐</span>
+                              {item.review_text && <span className="text-xs text-slate-500 italic font-medium truncate max-w-[100px]">"{item.review_text}"</span>}
+                            </div>
+                          ) : isDelivered ? (
+                            // Jeśli dostarczono, ale brak oceny - przycisk do ocenienia
+                            <button 
+                              onClick={() => {
+                                setReviewingItemId(item.id);
+                                setTempRating(5);
+                                setTempReview('');
+                              }}
+                              className="text-xs font-bold bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition shadow-sm"
+                            >
+                              Oceń danie ⭐
+                            </button>
+                          ) : (
+                            // Jeśli jeszcze nie dostarczono
+                            <span className="text-xs text-slate-400 font-semibold italic">Oczekuje na dostawę</span>
+                          )}
+                        </div>
+
+                        {/* Otwarty formularz oceniania dla konkretnego dania */}
+                        {reviewingItemId === item.id && (
+                          <div className="mt-4 pt-4 border-t border-slate-200 animate-in fade-in slide-in-from-top-2">
+                            <label className="block text-xs font-bold text-slate-500 mb-2">Twoja ocena:</label>
+                            <div className="flex gap-1 mb-3">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <button
+                                  key={star}
+                                  onClick={() => setTempRating(star)}
+                                  className={`text-2xl transition-transform hover:scale-110 ${star <= tempRating ? 'text-yellow-400' : 'text-slate-300 grayscale'}`}
+                                >
+                                  ⭐
+                                </button>
+                              ))}
+                            </div>
+                            
+                            <input 
+                              type="text" 
+                              placeholder="Krótki komentarz (opcjonalnie)..." 
+                              value={tempReview}
+                              onChange={(e) => setTempReview(e.target.value)}
+                              className="w-full p-2 text-sm border border-slate-200 rounded-lg mb-3 outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            
+                            <div className="flex gap-2">
+                              <button onClick={() => submitReview(item.id)} className="bg-black text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-800 transition">Zapisz opinię</button>
+                              <button onClick={() => setReviewingItemId(null)} className="bg-slate-200 text-slate-600 text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-300 transition">Anuluj</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
-                
-                <div className="pt-3 border-t border-slate-50 flex justify-between text-xs text-slate-400">
-                  <span>Wartość posiłku: {order.total_price.toFixed(2)} zł</span>
-                  <span>Firma pokryła: {order.employer_paid.toFixed(2)} zł</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
