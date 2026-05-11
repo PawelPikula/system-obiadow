@@ -1,12 +1,16 @@
 "use client";
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 
 export default function HistoriaPage() {
+  const router = useRouter();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalEmployeePaid: 0, count: 0 });
-  
+
   // Stany do obsługi formularza opinii
   const [reviewingItemId, setReviewingItemId] = useState(null);
   const [tempRating, setTempRating] = useState(5);
@@ -14,12 +18,15 @@ export default function HistoriaPage() {
 
   useEffect(() => {
     fetchOrderHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchOrderHistory() {
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     if (!session) {
-      window.location.href = '/login';
+      router.replace('/login');
       return;
     }
 
@@ -62,10 +69,11 @@ export default function HistoriaPage() {
       .eq('id', itemId);
 
     if (error) {
-      alert("Błąd podczas zapisywania opinii: " + error.message);
+      toast.error('Nie udało się zapisać opinii: ' + error.message);
     } else {
+      toast.success('Dzięki za opinię!');
       setReviewingItemId(null);
-      fetchOrderHistory(); // Odświeżamy listę, żeby pokazać zapisaną opinię
+      fetchOrderHistory();
     }
   }
 
@@ -77,14 +85,15 @@ export default function HistoriaPage() {
     );
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  // Data w strefie Europe/Warsaw (a nie UTC) — żeby po 22:00 nie pokazywało jutra.
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900">
       <div className="max-w-2xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Twoje Zamówienia 📝</h1>
-          <a href="/" className="text-blue-600 font-semibold text-sm hover:underline">Wróć do menu</a>
+          <Link href="/" className="text-blue-600 font-semibold text-sm hover:underline">Wróć do menu</Link>
         </div>
 
         {/* Karta Podsumowania */}

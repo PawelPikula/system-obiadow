@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 
 export default function RestauracjaPanel() {
@@ -35,10 +37,12 @@ export default function RestauracjaPanel() {
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
+      // Data w strefie Europe/Warsaw — eliminuje skok dnia o 22:00 UTC.
+      const localDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(d);
       days.push({
-        date: d.toISOString().split('T')[0],
+        date: localDate,
         name: i === 0 ? 'Dziś' : dayNames[d.getDay()],
-        dayNum: d.getDate()
+        dayNum: d.getDate(),
       });
     }
     setAvailableDays(days);
@@ -155,17 +159,23 @@ export default function RestauracjaPanel() {
     }]);
 
     if (!error) {
-      setNewName(''); 
-      setNewPrice(''); 
+      toast.success('Danie dodane do menu.');
+      setNewName('');
+      setNewPrice('');
       fetchRestaurantData();
     } else {
-      alert("Błąd dodawania: " + error.message);
+      toast.error('Nie udało się dodać dania: ' + error.message);
     }
   }
 
   async function handleDeleteDish(id) {
-    await supabase.from('menu_items').delete().eq('id', id); 
-    fetchRestaurantData();
+    const { error } = await supabase.from('menu_items').delete().eq('id', id);
+    if (error) {
+      toast.error('Nie udało się usunąć dania: ' + error.message);
+    } else {
+      toast.success('Danie usunięte.');
+      fetchRestaurantData();
+    }
   }
 
   // Uruchamianie drukowania z odpowiednim układem
@@ -181,8 +191,13 @@ export default function RestauracjaPanel() {
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100">Wczytywanie...</div>;
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans print:bg-white print:p-0 text-slate-800">
-      <div className="max-w-6xl mx-auto print:max-w-none print:m-0">
+    <main className="min-h-screen relative bg-gradient-premium p-4 md:p-8 font-sans print:bg-white print:p-0 text-slate-800 overflow-hidden">
+      {/* Animowane tła (blobs) - ukryte przy druku */}
+      <div className="absolute top-0 -left-10 w-96 h-96 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob print:hidden" />
+      <div className="absolute top-20 -right-10 w-96 h-96 bg-orange-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob print:hidden" style={{ animationDelay: '2s' }} />
+      <div className="absolute -bottom-20 left-1/2 w-96 h-96 bg-yellow-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob print:hidden" style={{ animationDelay: '4s' }} />
+
+      <div className="max-w-6xl mx-auto relative z-10 print:max-w-none print:m-0 animate-fade-in">
         
         {/* ========================================= */}
         {/* WIDOK DO DRUKU 1: RAPORT DLA KUCHNI       */}
@@ -286,26 +301,31 @@ export default function RestauracjaPanel() {
         <div className="print:hidden">
           
           {/* HEADER I ZAKŁADKI */}
-          <header className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-            <h1 className="text-2xl font-black text-slate-800">👨‍🍳 Panel Restauracji</h1>
-            <div className="flex bg-slate-200 p-1 rounded-2xl">
-              <button onClick={() => setActiveTab('menu')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'menu' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>📅 Planowanie Menu</button>
-              <button onClick={() => setActiveTab('produkcja')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'produkcja' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>🔥 Produkcja & Raporty</button>
+          <header className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 glass p-4 md:p-6 rounded-3xl">
+            <h1 className="text-2xl font-heading font-black text-slate-800 flex items-center gap-2">
+              <span className="text-3xl">👨‍🍳</span> Panel Restauracji
+            </h1>
+            <div className="flex bg-white/50 p-1.5 rounded-2xl backdrop-blur-sm border border-slate-200/50">
+              <button onClick={() => setActiveTab('menu')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'menu' ? 'bg-white shadow-md text-blue-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📅 Planowanie Menu</button>
+              <button onClick={() => setActiveTab('produkcja')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'produkcja' ? 'bg-white shadow-md text-orange-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🔥 Produkcja & Raporty</button>
             </div>
-            <a href="/" className="bg-white px-4 py-2 rounded-xl shadow-sm text-sm font-bold text-slate-600 hover:bg-slate-50">Wyjście</a>
+            <Link href="/" className="bg-white/60 px-5 py-2.5 rounded-xl shadow-sm border border-slate-200/50 text-sm font-bold text-slate-600 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">Wyjście</Link>
           </header>
 
           {/* PASEK Z KALENDARZEM */}
-          <div className="bg-white p-4 rounded-3xl shadow-sm mb-6 border border-slate-200">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Wybierz dzień:</p>
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-              {availableDays.map((day) => (
-                <button key={day.date} onClick={() => setSelectedDate(day.date)} className={`flex flex-col items-center justify-center min-w-[70px] py-3 rounded-2xl transition-all ${selectedDate === day.date ? (activeTab === 'menu' ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-orange-500 text-white shadow-lg scale-105') : 'bg-slate-50 text-slate-500 border border-slate-100 hover:bg-slate-100'}`}>
-                  <span className="text-[10px] font-bold uppercase mb-1">{day.name}</span>
-                  <span className="text-xl font-black">{day.dayNum}</span>
-                  {allItems.some(item => item.available_date === day.date) && <div className={`w-1.5 h-1.5 rounded-full mt-1 ${selectedDate === day.date ? 'bg-white' : 'bg-slate-400'}`}></div>}
-                </button>
-              ))}
+          <div className="glass p-5 md:p-6 rounded-3xl mb-8 border border-slate-200/50">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 ml-1">Wybierz dzień</p>
+            <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+              {availableDays.map((day) => {
+                const isSelected = selectedDate === day.date;
+                return (
+                  <button key={day.date} onClick={() => setSelectedDate(day.date)} className={`flex flex-col items-center justify-center min-w-[76px] py-4 rounded-2xl transition-all duration-300 ${isSelected ? (activeTab === 'menu' ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105' : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-lg shadow-orange-500/30 scale-105') : 'bg-white/60 text-slate-500 border border-slate-200/50 hover:bg-white hover:shadow-md backdrop-blur-sm'}`}>
+                    <span className={`text-[10px] font-bold uppercase mb-1.5 tracking-wider ${isSelected ? 'text-white' : 'text-slate-400'}`}>{day.name}</span>
+                    <span className="text-2xl font-heading font-black leading-none">{day.dayNum}</span>
+                    {allItems.some(item => item.available_date === day.date) && <div className={`w-1.5 h-1.5 rounded-full mt-2 ${isSelected ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-slate-400'}`}></div>}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -314,32 +334,32 @@ export default function RestauracjaPanel() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
               
               <div className="space-y-6">
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-                  <h2 className="text-xl font-bold mb-4">Dodaj danie na: <span className="text-blue-600">{selectedDate}</span></h2>
+                <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
+                  <h2 className="text-xl font-heading font-black mb-5 text-slate-800">Dodaj danie na: <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">{selectedDate}</span></h2>
                   <form onSubmit={handleAddDish} className="flex flex-col gap-4">
                     <div ref={wrapperRef} className="relative">
-                      <input type="text" required value={newName} onChange={handleNameChange} onFocus={() => newName.length > 0 && setShowSuggestions(true)} placeholder="Nazwa dania..." className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-medium" />
+                      <input type="text" required value={newName} onChange={handleNameChange} onFocus={() => newName.length > 0 && setShowSuggestions(true)} placeholder="Nazwa dania..." className="w-full p-4 bg-white/60 border border-slate-200/50 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 font-medium transition-all backdrop-blur-sm" />
                       {showSuggestions && suggestions.length > 0 && (
                         <ul className="absolute z-20 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto">
-                          {suggestions.map((s, i) => <li key={i} onClick={() => handleSuggestionSelect(s)} className="px-4 py-3 hover:bg-blue-50 cursor-pointer flex justify-between border-b last:border-0"><span className="font-bold">{s.name}</span><span className="text-blue-600 font-bold">{s.price} zł</span></li>)}
+                          {suggestions.map((s, i) => <li key={i} onClick={() => handleSuggestionSelect(s)} className="px-4 py-3 hover:bg-blue-50 cursor-pointer flex justify-between border-b border-slate-100 last:border-0 transition-colors"><span className="font-bold">{s.name}</span><span className="text-blue-600 font-black">{s.price} zł</span></li>)}
                         </ul>
                       )}
                     </div>
                     <div className="flex gap-4">
-                      <input type="number" step="0.01" required value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="Cena (zł)" className="w-1/2 p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" />
-                      <button type="submit" className="w-1/2 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition shadow-md active:scale-95">DODAJ DO MENU</button>
+                      <input type="number" step="0.01" required value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="Cena (zł)" className="w-1/2 p-4 bg-white/60 border border-slate-200/50 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 font-bold transition-all backdrop-blur-sm" />
+                      <button type="submit" className="w-1/2 bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-black rounded-2xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-[0_4px_14px_0_rgba(79,70,229,0.39)] hover:shadow-[0_6px_20px_rgba(79,70,229,0.23)] active:scale-95">DODAJ DO MENU</button>
                     </div>
                   </form>
                 </div>
 
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-                  <h2 className="text-lg font-bold mb-4">Menu zaplanowane na ten dzień:</h2>
-                  {dailyMenu.length === 0 ? <p className="text-slate-400 italic text-center py-4">Brak dań.</p> : (
-                    <ul className="space-y-2">
+                <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
+                  <h2 className="text-lg font-heading font-black mb-5 text-slate-800">Menu zaplanowane na ten dzień:</h2>
+                  {dailyMenu.length === 0 ? <p className="text-slate-500 italic text-center py-6 bg-white/40 rounded-2xl border border-dashed border-slate-300">Brak dań.</p> : (
+                    <ul className="space-y-3">
                       {dailyMenu.map(item => (
-                        <li key={item.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div><p className="font-bold">{item.name}</p><p className="text-blue-600 font-black text-sm">{item.price} zł</p></div>
-                          <button onClick={() => handleDeleteDish(item.id)} className="text-red-500 font-bold text-xs bg-white px-3 py-2 rounded-xl shadow-sm hover:bg-red-50 transition">USUŃ</button>
+                        <li key={item.id} className="flex justify-between items-center p-4 bg-white/60 rounded-2xl border border-slate-200/50 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">
+                          <div><p className="font-bold text-slate-800">{item.name}</p><p className="text-indigo-600 font-black text-sm">{item.price} zł</p></div>
+                          <button onClick={() => handleDeleteDish(item.id)} className="text-red-500 font-bold text-xs bg-white px-3 py-2 rounded-xl border border-red-100 shadow-sm hover:bg-red-50 hover:border-red-200 transition-all">USUŃ</button>
                         </li>
                       ))}
                     </ul>
@@ -348,17 +368,17 @@ export default function RestauracjaPanel() {
               </div>
 
               {/* OPINIE Z GWIAZDKAMI */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-                <h2 className="text-xl font-bold mb-4">⭐ Ostatnie opinie pracowników</h2>
-                <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+              <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
+                <h2 className="text-xl font-heading font-black mb-5 text-slate-800 flex items-center gap-2"><span>⭐</span> Ostatnie opinie</h2>
+                <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
                   {reviews.length === 0 ? (
-                    <p className="text-slate-400 italic text-center py-4">Brak opinii.</p>
+                    <p className="text-slate-500 italic text-center py-6 bg-white/40 rounded-2xl border border-dashed border-slate-300">Brak opinii.</p>
                   ) : (
                     reviews.map(review => (
-                      <div key={review.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <div className="flex justify-between mb-1"><span className="font-bold text-sm">{review.menu_items?.name}</span><span className="text-yellow-500">{"⭐".repeat(review.rating)}</span></div>
-                        {review.review_text && <p className="text-xs text-slate-600 italic bg-white p-2 rounded-lg mt-1">"{review.review_text}"</p>}
-                        <p className="text-[10px] text-slate-400 text-right mt-2 font-bold uppercase tracking-widest">{review.orders?.profiles?.first_name} {review.orders?.profiles?.last_name}</p>
+                      <div key={review.id} className="p-4 bg-white/60 rounded-2xl border border-slate-200/50 hover:bg-white transition-all backdrop-blur-sm shadow-sm hover:shadow-md">
+                        <div className="flex justify-between mb-2"><span className="font-bold text-sm text-slate-800">{review.menu_items?.name}</span><span className="text-yellow-500 tracking-widest">{"⭐".repeat(review.rating)}</span></div>
+                        {review.review_text && <p className="text-xs text-slate-700 italic bg-white/80 p-3 rounded-xl border border-slate-100">&quot;{review.review_text}&quot;</p>}
+                        <p className="text-[10px] text-slate-400 text-right mt-3 font-bold uppercase tracking-widest">{review.orders?.profiles?.first_name} {review.orders?.profiles?.last_name}</p>
                       </div>
                     ))
                   )}
@@ -372,15 +392,15 @@ export default function RestauracjaPanel() {
           {activeTab === 'produkcja' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               
-              <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <h2 className="text-2xl font-black text-slate-800">Raport dnia: <span className="text-orange-600">{selectedDate}</span></h2>
+              <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 glass p-6 rounded-3xl border border-slate-200/50">
+                <h2 className="text-2xl font-heading font-black text-slate-800">Raport dnia: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">{selectedDate}</span></h2>
                 
                 {/* PRZYCISKI DRUKOWANIA */}
-                <div className="flex gap-2">
-                  <button onClick={() => handlePrint('report')} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-black shadow-md flex items-center gap-2 transition">
+                <div className="flex gap-3">
+                  <button onClick={() => handlePrint('report')} className="bg-slate-800 text-white px-5 py-3 rounded-xl font-bold text-sm hover:bg-slate-900 shadow-md flex items-center gap-2 transition-all hover:shadow-lg hover:-translate-y-0.5">
                     🖨️ Raport Kuchni
                   </button>
-                  <button onClick={() => handlePrint('stickers')} className="bg-orange-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-orange-600 shadow-md flex items-center gap-2 transition">
+                  <button onClick={() => handlePrint('stickers')} className="bg-gradient-to-br from-orange-400 to-orange-600 text-white px-5 py-3 rounded-xl font-bold text-sm hover:from-orange-500 hover:to-orange-700 shadow-[0_4px_14px_0_rgba(249,115,22,0.39)] hover:shadow-[0_6px_20px_rgba(249,115,22,0.23)] flex items-center gap-2 transition-all hover:-translate-y-0.5">
                     🏷️ Drukuj Naklejki
                   </button>
                 </div>
@@ -388,28 +408,28 @@ export default function RestauracjaPanel() {
 
               {/* Sumy dla Kucharzy */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                <div className="bg-white p-6 rounded-3xl shadow-sm border-t-8 border-t-orange-400">
-                  <h3 className="font-black uppercase mb-4 text-orange-600">I Zmiana (Podsumowanie)</h3>
-                  {Object.entries(shift1Summary).length === 0 ? <p className="text-slate-400 italic text-center">Brak zamówień.</p> : (
-                    <div className="space-y-2">
+                <div className="glass p-6 rounded-3xl shadow-lg border-t-8 border-t-orange-500 border-x border-b border-slate-200/50">
+                  <h3 className="font-heading font-black uppercase mb-5 text-orange-600 tracking-wider">I Zmiana (Podsumowanie)</h3>
+                  {Object.entries(shift1Summary).length === 0 ? <p className="text-slate-500 italic text-center py-4">Brak zamówień.</p> : (
+                    <div className="space-y-3">
                       {Object.entries(shift1Summary).map(([name, qty]) => (
-                        <div key={name} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
-                          <span className="font-bold">{name}</span>
-                          <span className="text-xl font-black bg-orange-50 text-orange-600 px-3 py-1 rounded-lg">{qty} szt.</span>
+                        <div key={name} className="flex justify-between items-center py-3 border-b border-slate-200/50 last:border-0 hover:bg-white/40 px-2 rounded-lg transition-colors">
+                          <span className="font-bold text-slate-800">{name}</span>
+                          <span className="text-xl font-black font-heading bg-orange-100/80 text-orange-700 px-4 py-1.5 rounded-xl shadow-sm">{qty} szt.</span>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
                 
-                <div className="bg-white p-6 rounded-3xl shadow-sm border-t-8 border-t-slate-800">
-                  <h3 className="font-black uppercase mb-4 text-slate-800">II Zmiana (Podsumowanie)</h3>
-                  {Object.entries(shift2Summary).length === 0 ? <p className="text-slate-400 italic text-center">Brak zamówień.</p> : (
-                    <div className="space-y-2">
+                <div className="glass p-6 rounded-3xl shadow-lg border-t-8 border-t-indigo-600 border-x border-b border-slate-200/50">
+                  <h3 className="font-heading font-black uppercase mb-5 text-indigo-700 tracking-wider">II Zmiana (Podsumowanie)</h3>
+                  {Object.entries(shift2Summary).length === 0 ? <p className="text-slate-500 italic text-center py-4">Brak zamówień.</p> : (
+                    <div className="space-y-3">
                       {Object.entries(shift2Summary).map(([name, qty]) => (
-                        <div key={name} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
-                          <span className="font-bold">{name}</span>
-                          <span className="text-xl font-black bg-slate-100 text-slate-800 px-3 py-1 rounded-lg">{qty} szt.</span>
+                        <div key={name} className="flex justify-between items-center py-3 border-b border-slate-200/50 last:border-0 hover:bg-white/40 px-2 rounded-lg transition-colors">
+                          <span className="font-bold text-slate-800">{name}</span>
+                          <span className="text-xl font-black font-heading bg-indigo-100/80 text-indigo-700 px-4 py-1.5 rounded-xl shadow-sm">{qty} szt.</span>
                         </div>
                       ))}
                     </div>
@@ -418,35 +438,35 @@ export default function RestauracjaPanel() {
               </div>
 
               {/* Tabela do pakowania */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-                <h3 className="text-xl font-black text-slate-800 mb-6">Szczegółowa lista paczek (do pakowania):</h3>
+              <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50">
+                <h3 className="text-xl font-heading font-black text-slate-800 mb-6">Szczegółowa lista paczek (do pakowania):</h3>
                 
                 {detailedOrders.length === 0 ? (
-                  <div className="p-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                    <p className="text-slate-400 font-medium">Brak danych do wyświetlenia.</p>
+                  <div className="p-12 text-center bg-white/40 rounded-2xl border-2 border-dashed border-slate-300">
+                    <p className="text-slate-500 font-medium">Brak danych do wyświetlenia.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200/50 shadow-sm bg-white/40">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="bg-slate-100 text-slate-500 text-xs uppercase tracking-wider">
-                          <th className="p-4 rounded-tl-xl">Zmiana</th>
-                          <th className="p-4">Firma</th>
-                          <th className="p-4">Pracownik</th>
-                          <th className="p-4 rounded-tr-xl">Zamówione Danie</th>
+                        <tr className="bg-white/60 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200/50">
+                          <th className="p-5 font-bold">Zmiana</th>
+                          <th className="p-5 font-bold">Firma</th>
+                          <th className="p-5 font-bold">Pracownik</th>
+                          <th className="p-5 font-bold">Zamówione Danie</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-slate-200/50">
                         {detailedOrders.map((order, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50 transition">
-                            <td className="p-4">
-                              <span className={`font-bold px-2 py-1 rounded text-xs ${order.shift === 1 ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-700'}`}>
-                                Zmiana {order.shift}
+                          <tr key={idx} className="hover:bg-white/80 transition-colors">
+                            <td className="p-5">
+                              <span className={`font-bold px-3 py-1.5 rounded-lg text-xs tracking-wider shadow-sm ${order.shift === 1 ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
+                                ZMIANA {order.shift}
                               </span>
                             </td>
-                            <td className="p-4 font-bold text-slate-700">{order.company}</td>
-                            <td className="p-4 text-slate-600">{order.person}</td>
-                            <td className="p-4 font-bold text-blue-600">{order.dish}</td>
+                            <td className="p-5 font-bold text-slate-800">{order.company}</td>
+                            <td className="p-5 text-slate-600 font-medium">{order.person}</td>
+                            <td className="p-5 font-black text-slate-800">{order.dish}</td>
                           </tr>
                         ))}
                       </tbody>

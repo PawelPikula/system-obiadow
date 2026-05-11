@@ -1,28 +1,44 @@
 import './globals.css'
+import { Toaster } from 'sonner'
+import { Inter, Outfit } from 'next/font/google'
+
+const inter = Inter({ 
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+})
+
+const outfit = Outfit({ 
+  subsets: ['latin'],
+  variable: '--font-outfit',
+  display: 'swap',
+})
 
 export const metadata = {
   title: 'Obiady B2B',
   description: 'System zamówień posiłków dla pracowników',
   appleWebApp: {
-    capable: true, // Włącza tryb pełnoekranowy na iPhone'ach
+    capable: true,
     title: 'Obiady B2B',
     statusBarStyle: 'default',
   },
 }
 
-// Ten blok ustawia kolory i blokuje przybliżanie ekranu (jak w prawdziwej apce)
 export const viewport = {
   themeColor: '#2563eb',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
-  userScalable: false, 
+  userScalable: false,
 }
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="pl">
-      <body>{children}</body>
+    <html lang="pl" className={`${inter.variable} ${outfit.variable}`}>
+      <body className="font-sans antialiased text-slate-900 bg-slate-50 selection:bg-blue-200 selection:text-blue-900">
+        {children}
+        <Toaster position="top-center" richColors closeButton />
+      </body>
     </html>
   )
 }

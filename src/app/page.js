@@ -1,48 +1,103 @@
 "use client";
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabase';
 import MenuCart from '../components/MenuCart';
 
 export default function Home() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     async function fetchData() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { window.location.href = '/login'; return; }
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        router.replace('/login');
+        return;
+      }
+      if (cancelled) return;
       setUser(session.user);
 
       const { data: profileData } = await supabase
         .from('profiles')
         .select(`first_name, last_name, companies ( name, payment_model, daily_subsidy )`)
-        .eq('id', session.user.id).single();
+        .eq('id', session.user.id)
+        .single();
 
+      if (cancelled) return;
       setProfile(profileData);
       setLoading(false);
     }
     fetchData();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Wczytywanie...</div>;
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.replace('/login');
+    router.refresh();
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-blue-500" />
+      </div>
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
-      <div className="max-w-4xl mx-auto flex flex-col items-center">
-        <header className="w-full max-w-md flex justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+    <main className="min-h-screen relative bg-gradient-premium p-4 md:p-8 font-sans overflow-hidden">
+      {/* Animowane tła (blobs) */}
+      <div className="absolute top-0 -left-10 w-96 h-96 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob" />
+      <div 
+        className="absolute top-20 -right-10 w-96 h-96 bg-indigo-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob" 
+        style={{ animationDelay: '2s' }} 
+      />
+      <div 
+        className="absolute -bottom-20 left-1/2 w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob" 
+        style={{ animationDelay: '4s' }} 
+      />
+
+      <div className="max-w-4xl mx-auto flex flex-col items-center relative z-10 animate-fade-in">
+        <header className="w-full max-w-md flex justify-between items-center mb-8 glass p-6 rounded-3xl">
           <div>
-            <h1 className="text-lg font-bold">Witaj, {profile?.first_name}!</h1>
-            <p className="text-xs text-blue-600 font-bold uppercase">{profile?.companies?.name}</p>
+            <p className="text-sm font-medium text-slate-500">Witaj z powrotem,</p>
+            <h1 className="text-xl font-heading font-black text-slate-800">{profile?.first_name}!</h1>
+            <p className="text-xs text-gradient font-bold uppercase mt-1 tracking-wide">
+              {profile?.companies?.name}
+            </p>
           </div>
           <div className="flex gap-2">
-            <a href="/historia" className="p-2 bg-slate-100 rounded-lg text-xs font-bold">Historia</a>
-            <button onClick={() => supabase.auth.signOut().then(() => window.location.href='/login')} className="p-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold">X</button>
+            <Link
+              href="/historia"
+              className="px-4 py-2 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm"
+            >
+              Historia
+            </Link>
+            <button
+              onClick={handleSignOut}
+              className="px-4 py-2 bg-red-50/80 border border-red-100 text-red-600 rounded-xl text-sm font-bold hover:bg-red-100 hover:shadow-md transition-all backdrop-blur-sm"
+              aria-label="Wyloguj się"
+            >
+              Wyloguj
+            </button>
           </div>
         </header>
 
         {!profile?.companies ? (
-          <p>Oczekiwanie na przypisanie do firmy...</p>
+          <div className="glass p-8 rounded-3xl text-center">
+            <p className="text-slate-600 font-medium">Oczekiwanie na przypisanie do firmy…</p>
+            <div className="mt-4 animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500 mx-auto" />
+          </div>
         ) : (
           <MenuCart userProfile={profile} userId={user.id} />
         )}
