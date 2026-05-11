@@ -37,6 +37,7 @@ export default function RestauracjaPanel() {
   const [newPrice, setNewPrice] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [dishSearchQuery, setDishSearchQuery] = useState('');
   const wrapperRef = useRef(null);
 
   // 1. Inicjalizacja przy starcie
@@ -405,6 +406,7 @@ export default function RestauracjaPanel() {
               <button onClick={() => setActiveTab('menu')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'menu' ? 'bg-white shadow-md text-blue-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📅 Planowanie Menu</button>
               <button onClick={() => setActiveTab('produkcja')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'produkcja' ? 'bg-white shadow-md text-orange-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🔥 Produkcja & Raporty</button>
               <button onClick={() => setActiveTab('statystyki')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'statystyki' ? 'bg-white shadow-md text-green-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📊 Statystyki</button>
+              <button onClick={() => setActiveTab('baza')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'baza' ? 'bg-white shadow-md text-purple-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📖 Baza Dań</button>
             </div>
             <Link href="/" className="bg-white/60 px-5 py-2.5 rounded-xl shadow-sm border border-slate-200/50 text-sm font-bold text-slate-600 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">Wyjście</Link>
           </header>
@@ -642,6 +644,49 @@ export default function RestauracjaPanel() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* --- ZAKŁADKA 4: BAZA DAŃ --- */}
+          {activeTab === 'baza' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50 mb-8">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                  <h2 className="text-3xl font-heading font-black text-slate-800">
+                    Baza <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-600">Dań</span>
+                  </h2>
+                  
+                  {/* Wyszukiwarka */}
+                  <div className="relative w-full md:w-72">
+                    <input 
+                      type="text" 
+                      placeholder="Szukaj dania..." 
+                      value={dishSearchQuery}
+                      onChange={(e) => setDishSearchQuery(e.target.value)}
+                      className="w-full p-3 pl-10 bg-white/60 border border-slate-200/50 rounded-xl outline-none focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 font-medium transition-all backdrop-blur-sm shadow-sm" 
+                    />
+                    <span className="absolute left-3 top-3.5 text-slate-400 leading-none">🔍</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {dishDictionary
+                    .filter(dish => dish.name.toLowerCase().includes(dishSearchQuery.toLowerCase()))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((dish, idx) => (
+                      <div key={idx} className="bg-white/60 p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-md hover:bg-white transition-all flex justify-between items-center group">
+                        <span className="font-bold text-slate-800 group-hover:text-purple-700 transition-colors pr-2">{dish.name}</span>
+                        <span className="text-sm font-black font-heading bg-purple-100/50 text-purple-700 px-3 py-1.5 rounded-xl border border-purple-200/50 whitespace-nowrap shadow-sm">{dish.price} zł</span>
+                      </div>
+                  ))}
+                  
+                  {dishDictionary.filter(dish => dish.name.toLowerCase().includes(dishSearchQuery.toLowerCase())).length === 0 && (
+                    <div className="col-span-full p-12 text-center bg-white/40 rounded-2xl border-2 border-dashed border-slate-300">
+                      <p className="text-slate-500 font-medium">Nie znaleziono żadnych dań pasujących do wyszukiwania.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
