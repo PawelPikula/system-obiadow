@@ -22,6 +22,15 @@ export default function RestauracjaPanel() {
   const [shift2Summary, setShift2Summary] = useState({});
   const [detailedOrders, setDetailedOrders] = useState([]); 
 
+  // Statystyki
+  const [statsData, setStatsData] = useState({
+    today: { revenue: 0, count: 0 },
+    week: { revenue: 0, count: 0 },
+    month: { revenue: 0, count: 0 },
+    topDishes: []
+  });
+  const [statsLoading, setStatsLoading] = useState(false);
+
   // Formularz i autouzupełnianie
   const [dishDictionary, setDishDictionary] = useState([]);
   const [newName, setNewName] = useState('');
@@ -58,10 +67,16 @@ export default function RestauracjaPanel() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 2. Odświeżanie produkcji przy zmianie dnia
+  // 2. Odświeżanie produkcji i statystyk
   useEffect(() => {
     if (selectedDate) fetchProduction();
   }, [selectedDate]);
+
+  useEffect(() => {
+    if (activeTab === 'statystyki') {
+      fetchStatistics();
+    }
+  }, [activeTab]);
 
   // Pobieranie menu i opinii
   async function fetchRestaurantData() {
@@ -130,6 +145,87 @@ export default function RestauracjaPanel() {
     setShift2Summary(s2);
     detailedList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
     setDetailedOrders(detailedList);
+  }
+
+  // Pobieranie statystyk
+  async function fetchStatistics() {
+    setStatsLoading(true);
+    
+    // Ustalanie zakresów dat (dzisiaj, ten tydzień, ten miesiąc)
+    const now = new Date();
+    // Reset czasu dla dzisiaj
+    const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
+    
+    // Początek miesiąca
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthStartStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(firstDayOfMonth);
+    
+    // Pobieramy zamówienia z całego obecnego miesiąca
+    const { data } = await supabase
+      .from('orders')
+      .select(`
+        delivery_date,
+        order_items ( quantity, menu_items ( name, price ) )
+      `)
+      .gte('delivery_date', monthStartStr)
+      .in('status', ['approved', 'paid_via_blik']);
+
+    if (data) {
+      let todayRev = 0, todayCount = 0;
+      let weekRev = 0, weekCount = 0;
+      let monthRev = 0, monthCount = 0;
+      const dishCounts = {};
+
+      // Do obliczenia tygodnia - bierzemy ostatnie 7 dni
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      const sevenDaysAgoStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(sevenDaysAgo);
+
+      data.forEach(order => {
+        const isToday = order.delivery_date === todayStr;
+        const isThisWeek = order.delivery_date >= sevenDaysAgoStr;
+        // wszystkie są isThisMonth, bo filtrujemy w zapytaniu
+
+        order.order_items.forEach(item => {
+          if (!item.menu_items) return; // zabezpieczenie
+          const dishName = item.menu_items.name;
+          const price = item.menu_items.price || 0;
+          const qty = item.quantity || 1;
+          const totalLineValue = price * qty;
+
+          // Dzisiaj
+          if (isToday) {
+            todayRev += totalLineValue;
+            todayCount += qty;
+          }
+          // Tydzień
+          if (isThisWeek) {
+            weekRev += totalLineValue;
+            weekCount += qty;
+          }
+          // Miesiąc
+          monthRev += totalLineValue;
+          monthCount += qty;
+
+          // Do rankingu zliczamy dla całego miesiąca
+          dishCounts[dishName] = (dishCounts[dishName] || 0) + qty;
+        });
+      });
+
+      // Sortowanie top dań
+      const topDishes = Object.entries(dishCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10); // top 10
+
+      setStatsData({
+        today: { revenue: todayRev, count: todayCount },
+        week: { revenue: weekRev, count: weekCount },
+        month: { revenue: monthRev, count: monthCount },
+        topDishes
+      });
+    }
+    setStatsLoading(false);
   }
 
   // Funkcje obsługi formularza (Których wcześniej zabrakło!)
@@ -305,9 +401,10 @@ export default function RestauracjaPanel() {
             <h1 className="text-2xl font-heading font-black text-slate-800 flex items-center gap-2">
               <span className="text-3xl">👨‍🍳</span> Panel Restauracji
             </h1>
-            <div className="flex bg-white/50 p-1.5 rounded-2xl backdrop-blur-sm border border-slate-200/50">
-              <button onClick={() => setActiveTab('menu')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'menu' ? 'bg-white shadow-md text-blue-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📅 Planowanie Menu</button>
-              <button onClick={() => setActiveTab('produkcja')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'produkcja' ? 'bg-white shadow-md text-orange-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🔥 Produkcja & Raporty</button>
+            <div className="flex bg-white/50 p-1.5 rounded-2xl backdrop-blur-sm border border-slate-200/50 overflow-x-auto scrollbar-hide">
+              <button onClick={() => setActiveTab('menu')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'menu' ? 'bg-white shadow-md text-blue-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📅 Planowanie Menu</button>
+              <button onClick={() => setActiveTab('produkcja')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'produkcja' ? 'bg-white shadow-md text-orange-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🔥 Produkcja & Raporty</button>
+              <button onClick={() => setActiveTab('statystyki')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'statystyki' ? 'bg-white shadow-md text-green-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📊 Statystyki</button>
             </div>
             <Link href="/" className="bg-white/60 px-5 py-2.5 rounded-xl shadow-sm border border-slate-200/50 text-sm font-bold text-slate-600 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">Wyjście</Link>
           </header>
@@ -477,6 +574,77 @@ export default function RestauracjaPanel() {
 
             </div>
           )}
+
+          {/* --- ZAKŁADKA 3: STATYSTYKI --- */}
+          {activeTab === 'statystyki' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+              
+              {statsLoading ? (
+                <div className="py-20 flex justify-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-green-500"></div>
+                </div>
+              ) : (
+                <>
+                  <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50 mb-8">
+                    <h2 className="text-3xl font-heading font-black text-slate-800 mb-8">Podsumowanie <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-emerald-600">Sprzedaży</span></h2>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* Dziś */}
+                      <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-md hover:bg-white transition-all">
+                        <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-2">Dzisiaj</p>
+                        <p className="text-4xl font-heading font-black text-slate-800 mb-1">{statsData.today.revenue.toFixed(2)} <span className="text-xl text-slate-400">zł</span></p>
+                        <p className="text-green-600 font-bold bg-green-100/80 px-3 py-1 rounded-lg inline-block">{statsData.today.count} sprzedanych porcji</p>
+                      </div>
+
+                      {/* Ten tydzień */}
+                      <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-md hover:bg-white transition-all relative overflow-hidden">
+                        <div className="absolute -right-4 -top-4 w-24 h-24 bg-green-100 rounded-full blur-2xl opacity-60 pointer-events-none"></div>
+                        <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-2 relative z-10">Ostatnie 7 dni</p>
+                        <p className="text-4xl font-heading font-black text-slate-800 mb-1 relative z-10">{statsData.week.revenue.toFixed(2)} <span className="text-xl text-slate-400">zł</span></p>
+                        <p className="text-green-600 font-bold bg-green-100/80 px-3 py-1 rounded-lg inline-block relative z-10">{statsData.week.count} sprzedanych porcji</p>
+                      </div>
+
+                      {/* Ten miesiąc */}
+                      <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-6 rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all text-white relative overflow-hidden">
+                        <div className="absolute -right-10 -top-10 w-40 h-40 bg-white rounded-full mix-blend-overlay filter blur-2xl opacity-20 pointer-events-none"></div>
+                        <p className="text-sm font-bold text-green-100 uppercase tracking-widest mb-2 relative z-10">Ten miesiąc</p>
+                        <p className="text-4xl font-heading font-black mb-1 relative z-10">{statsData.month.revenue.toFixed(2)} <span className="text-xl text-green-200">zł</span></p>
+                        <p className="text-white font-bold bg-white/20 px-3 py-1 rounded-lg inline-block relative z-10 backdrop-blur-sm">{statsData.month.count} sprzedanych porcji</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Ranking */}
+                  <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50">
+                    <h2 className="text-2xl font-heading font-black text-slate-800 mb-6 flex items-center gap-2"><span>🏆</span> Top 10 Najchętniej Zamawianych Dań <span className="text-sm text-slate-400 font-medium ml-2">(w tym miesiącu)</span></h2>
+                    
+                    {statsData.topDishes.length === 0 ? (
+                      <div className="p-12 text-center bg-white/40 rounded-2xl border-2 border-dashed border-slate-300">
+                        <p className="text-slate-500 font-medium">Brak danych do wyświetlenia.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {statsData.topDishes.map((dish, idx) => (
+                          <div key={dish.name} className="flex items-center justify-between p-4 bg-white/60 rounded-2xl border border-slate-200/50 hover:bg-white hover:shadow-md transition-all">
+                            <div className="flex items-center gap-4">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black font-heading text-lg ${idx === 0 ? 'bg-yellow-100 text-yellow-600 shadow-sm' : idx === 1 ? 'bg-slate-200 text-slate-600 shadow-sm' : idx === 2 ? 'bg-orange-100 text-orange-700 shadow-sm' : 'bg-slate-50 text-slate-400'}`}>
+                                {idx + 1}
+                              </div>
+                              <span className="font-bold text-lg text-slate-800">{dish.name}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xl font-black font-heading text-emerald-600 bg-emerald-50 px-4 py-1.5 rounded-xl shadow-sm border border-emerald-100">{dish.count} szt.</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
     </main>
