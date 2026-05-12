@@ -6,13 +6,24 @@
 CREATE TABLE IF NOT EXISTS public.system_settings (
   id integer PRIMARY KEY DEFAULT 1,
   order_cutoff_shift1 time NOT NULL DEFAULT '09:00:00',
+  order_cutoff_shift1_prev_day boolean NOT NULL DEFAULT false,
   order_cutoff_shift2 time NOT NULL DEFAULT '12:00:00',
+  order_cutoff_shift2_prev_day boolean NOT NULL DEFAULT false,
   cancel_cutoff_shift1 time NOT NULL DEFAULT '09:00:00',
+  cancel_cutoff_shift1_prev_day boolean NOT NULL DEFAULT false,
   cancel_cutoff_shift2 time NOT NULL DEFAULT '12:00:00',
+  cancel_cutoff_shift2_prev_day boolean NOT NULL DEFAULT false,
   updated_at timestamp with time zone DEFAULT now()
 );
 
+-- Jeśli tabela już istnieje (stara wersja), dodajemy nowe kolumny
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS order_cutoff_shift1_prev_day boolean NOT NULL DEFAULT false;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS order_cutoff_shift2_prev_day boolean NOT NULL DEFAULT false;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS cancel_cutoff_shift1_prev_day boolean NOT NULL DEFAULT false;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS cancel_cutoff_shift2_prev_day boolean NOT NULL DEFAULT false;
+
 -- Upewnienie się, że tabela ma zawsze tylko jeden wiersz (id=1)
+ALTER TABLE public.system_settings DROP CONSTRAINT IF EXISTS single_row_check;
 ALTER TABLE public.system_settings ADD CONSTRAINT single_row_check CHECK (id = 1);
 
 -- Jeśli tabela jest nowa i pusta, dodajemy domyślne ustawienia

@@ -68,13 +68,22 @@ export default function HistoriaPage() {
 
   // Sprawdzanie czy można anulować zamówienie
   const canCancelOrder = (deliveryDate, shift) => {
+    if (!settings) return false;
+    
     const now = new Date();
     const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
     
-    if (deliveryDate > todayStr) return true;
-    if (deliveryDate < todayStr) return false;
+    const isPrevDay = shift === 1 ? settings.cancel_cutoff_shift1_prev_day : settings.cancel_cutoff_shift2_prev_day;
+    const cutoffTime = shift === 1 ? settings.cancel_cutoff_shift1 : settings.cancel_cutoff_shift2;
     
-    if (!settings) return false;
+    const deliveryDateObj = new Date(deliveryDate);
+    if (isPrevDay) {
+      deliveryDateObj.setDate(deliveryDateObj.getDate() - 1);
+    }
+    const cutoffDateStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(deliveryDateObj);
+    
+    if (cutoffDateStr > todayStr) return true;
+    if (cutoffDateStr < todayStr) return false;
     
     const getHourFloat = (timeStr) => {
       if (!timeStr) return 0;
@@ -83,8 +92,7 @@ export default function HistoriaPage() {
     };
     
     const currentHour = now.getHours() + now.getMinutes() / 60;
-    if (shift === 1 && currentHour < getHourFloat(settings.cancel_cutoff_shift1)) return true;
-    if (shift === 2 && currentHour < getHourFloat(settings.cancel_cutoff_shift2)) return true;
+    if (currentHour < getHourFloat(cutoffTime)) return true;
     
     return false;
   };

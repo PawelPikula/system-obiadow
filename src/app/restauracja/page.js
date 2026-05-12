@@ -257,13 +257,22 @@ export default function RestauracjaPanel() {
   }
 
   const canCancel = (shift) => {
+    if (!settings) return false;
+    
     const now = new Date();
     const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
     
-    if (selectedDate > todayStr) return true;
-    if (selectedDate < todayStr) return false;
+    const isPrevDay = shift === 1 ? settings.cancel_cutoff_shift1_prev_day : settings.cancel_cutoff_shift2_prev_day;
+    const cutoffTime = shift === 1 ? settings.cancel_cutoff_shift1 : settings.cancel_cutoff_shift2;
     
-    if (!settings) return false;
+    const deliveryDateObj = new Date(selectedDate);
+    if (isPrevDay) {
+      deliveryDateObj.setDate(deliveryDateObj.getDate() - 1);
+    }
+    const cutoffDateStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(deliveryDateObj);
+    
+    if (cutoffDateStr > todayStr) return true;
+    if (cutoffDateStr < todayStr) return false;
     
     const getHourFloat = (timeStr) => {
       if (!timeStr) return 0;
@@ -272,8 +281,7 @@ export default function RestauracjaPanel() {
     };
     
     const currentHour = now.getHours() + now.getMinutes() / 60;
-    if (shift === 1 && currentHour < getHourFloat(settings.cancel_cutoff_shift1)) return true;
-    if (shift === 2 && currentHour < getHourFloat(settings.cancel_cutoff_shift2)) return true;
+    if (currentHour < getHourFloat(cutoffTime)) return true;
     
     return false;
   };
@@ -281,9 +289,13 @@ export default function RestauracjaPanel() {
   const saveSettings = async () => {
     const { error } = await supabase.from('system_settings').update({
       order_cutoff_shift1: settings.order_cutoff_shift1,
+      order_cutoff_shift1_prev_day: settings.order_cutoff_shift1_prev_day,
       order_cutoff_shift2: settings.order_cutoff_shift2,
+      order_cutoff_shift2_prev_day: settings.order_cutoff_shift2_prev_day,
       cancel_cutoff_shift1: settings.cancel_cutoff_shift1,
+      cancel_cutoff_shift1_prev_day: settings.cancel_cutoff_shift1_prev_day,
       cancel_cutoff_shift2: settings.cancel_cutoff_shift2,
+      cancel_cutoff_shift2_prev_day: settings.cancel_cutoff_shift2_prev_day,
     }).eq('id', 1);
     
     if (error) toast.error('Błąd zapisu ustawień: ' + error.message);
@@ -762,7 +774,10 @@ export default function RestauracjaPanel() {
                                   Czas minął
                                 </button>
                                 <p className="text-[10px] text-slate-400 mt-1">
-                                  (Limit dla ZM {order.shift}: {settings ? settings[`cancel_cutoff_shift${order.shift}`]?.substring(0, 5) : '?'})
+                                  (Limit dla ZM {order.shift}: 
+                                  {settings ? 
+                                    `${settings[`cancel_cutoff_shift${order.shift}_prev_day`] ? 'Dzień wcześniej' : 'W dniu dostawy'} ${settings[`cancel_cutoff_shift${order.shift}`]?.substring(0, 5)}`
+                                  : '?'})
                                 </p>
                               </div>
                             )}
@@ -785,29 +800,53 @@ export default function RestauracjaPanel() {
                 
                 <div className="space-y-6">
                   <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm">
-                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Zamawianie (do której godziny można zamawiać?)</h3>
-                    <div className="grid grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">I Zmiana</label>
-                        <input type="time" value={settings.order_cutoff_shift1.substring(0, 5)} onChange={(e) => setSettings({...settings, order_cutoff_shift1: e.target.value + ':00'})} className="w-full p-3 rounded-xl border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Zamawianie (do kiedy można składać nowe zamówienia?)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-orange-500"></span> I Zmiana</label>
+                        <div className="space-y-3">
+                          <input type="time" value={settings.order_cutoff_shift1.substring(0, 5)} onChange={(e) => setSettings({...settings, order_cutoff_shift1: e.target.value + ':00'})} className="w-full p-3 rounded-lg border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                          <select value={settings.order_cutoff_shift1_prev_day ? "true" : "false"} onChange={(e) => setSettings({...settings, order_cutoff_shift1_prev_day: e.target.value === "true"})} className="w-full p-3 rounded-lg border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700">
+                            <option value="false">W dniu dostawy</option>
+                            <option value="true">Dzień przed dostawą</option>
+                          </select>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">II Zmiana</label>
-                        <input type="time" value={settings.order_cutoff_shift2.substring(0, 5)} onChange={(e) => setSettings({...settings, order_cutoff_shift2: e.target.value + ':00'})} className="w-full p-3 rounded-xl border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-indigo-500"></span> II Zmiana</label>
+                        <div className="space-y-3">
+                          <input type="time" value={settings.order_cutoff_shift2.substring(0, 5)} onChange={(e) => setSettings({...settings, order_cutoff_shift2: e.target.value + ':00'})} className="w-full p-3 rounded-lg border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                          <select value={settings.order_cutoff_shift2_prev_day ? "true" : "false"} onChange={(e) => setSettings({...settings, order_cutoff_shift2_prev_day: e.target.value === "true"})} className="w-full p-3 rounded-lg border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700">
+                            <option value="false">W dniu dostawy</option>
+                            <option value="true">Dzień przed dostawą</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   </div>
                   
                   <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm">
-                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Anulowanie (do której godziny można anulować?)</h3>
-                    <div className="grid grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">I Zmiana</label>
-                        <input type="time" value={settings.cancel_cutoff_shift1.substring(0, 5)} onChange={(e) => setSettings({...settings, cancel_cutoff_shift1: e.target.value + ':00'})} className="w-full p-3 rounded-xl border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Anulowanie (do kiedy można anulować zamówienia?)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-orange-500"></span> I Zmiana</label>
+                        <div className="space-y-3">
+                          <input type="time" value={settings.cancel_cutoff_shift1.substring(0, 5)} onChange={(e) => setSettings({...settings, cancel_cutoff_shift1: e.target.value + ':00'})} className="w-full p-3 rounded-lg border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                          <select value={settings.cancel_cutoff_shift1_prev_day ? "true" : "false"} onChange={(e) => setSettings({...settings, cancel_cutoff_shift1_prev_day: e.target.value === "true"})} className="w-full p-3 rounded-lg border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700">
+                            <option value="false">W dniu dostawy</option>
+                            <option value="true">Dzień przed dostawą</option>
+                          </select>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">II Zmiana</label>
-                        <input type="time" value={settings.cancel_cutoff_shift2.substring(0, 5)} onChange={(e) => setSettings({...settings, cancel_cutoff_shift2: e.target.value + ':00'})} className="w-full p-3 rounded-xl border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-indigo-500"></span> II Zmiana</label>
+                        <div className="space-y-3">
+                          <input type="time" value={settings.cancel_cutoff_shift2.substring(0, 5)} onChange={(e) => setSettings({...settings, cancel_cutoff_shift2: e.target.value + ':00'})} className="w-full p-3 rounded-lg border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                          <select value={settings.cancel_cutoff_shift2_prev_day ? "true" : "false"} onChange={(e) => setSettings({...settings, cancel_cutoff_shift2_prev_day: e.target.value === "true"})} className="w-full p-3 rounded-lg border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700">
+                            <option value="false">W dniu dostawy</option>
+                            <option value="true">Dzień przed dostawą</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   </div>

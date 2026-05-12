@@ -128,8 +128,17 @@ export default function MenuCart({ userProfile, userId }) {
     const now = new Date();
     const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
     
-    if (selectedDate > todayStr) return true;
-    if (selectedDate < todayStr) return false;
+    const isPrevDay = selectedShift === 1 ? settings.order_cutoff_shift1_prev_day : settings.order_cutoff_shift2_prev_day;
+    const cutoffTime = selectedShift === 1 ? settings.order_cutoff_shift1 : settings.order_cutoff_shift2;
+    
+    const deliveryDateObj = new Date(selectedDate);
+    if (isPrevDay) {
+      deliveryDateObj.setDate(deliveryDateObj.getDate() - 1);
+    }
+    const cutoffDateStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(deliveryDateObj);
+    
+    if (cutoffDateStr > todayStr) return true;
+    if (cutoffDateStr < todayStr) return false;
     
     const getHourFloat = (timeStr) => {
       if (!timeStr) return 0;
@@ -138,8 +147,7 @@ export default function MenuCart({ userProfile, userId }) {
     };
     
     const currentHour = now.getHours() + now.getMinutes() / 60;
-    if (selectedShift === 1 && currentHour < getHourFloat(settings.order_cutoff_shift1)) return true;
-    if (selectedShift === 2 && currentHour < getHourFloat(settings.order_cutoff_shift2)) return true;
+    if (currentHour < getHourFloat(cutoffTime)) return true;
     
     return false;
   };
@@ -215,7 +223,9 @@ export default function MenuCart({ userProfile, userId }) {
             <p className="text-red-500 font-bold mb-2">Czas minął ⏰</p>
             <p className="text-slate-500 font-medium text-sm px-4">
               Nie można już składać zamówień na wybraną datę i zmianę.
-              <br/>(Limit dla ZM {selectedShift}: {settings ? settings[`order_cutoff_shift${selectedShift}`]?.substring(0, 5) : '?'})
+              <br/>(Limit dla ZM {selectedShift}: {settings ? 
+                `${settings[`order_cutoff_shift${selectedShift}_prev_day`] ? 'Dzień wcześniej' : 'W dniu dostawy'} ${settings[`order_cutoff_shift${selectedShift}`]?.substring(0, 5)}`
+              : '?'})
             </p>
           </div>
         ) : filteredItems.length === 0 ? (
