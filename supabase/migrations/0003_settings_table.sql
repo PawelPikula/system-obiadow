@@ -35,12 +35,14 @@ ON CONFLICT (id) DO NOTHING;
 ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
 
 -- Wszyscy zalogowani użytkownicy mogą odczytać ustawienia, by wiedzieć, do kiedy zamawiać/anulować
+DROP POLICY IF EXISTS "Każdy zalogowany może odczytać ustawienia" ON public.system_settings;
 CREATE POLICY "Każdy zalogowany może odczytać ustawienia" 
   ON public.system_settings FOR SELECT 
   TO authenticated 
   USING (true);
 
 -- Tylko 'admin' oraz 'restaurant' mogą modyfikować ustawienia
+DROP POLICY IF EXISTS "Restauracja i Admin mogą edytować ustawienia" ON public.system_settings;
 CREATE POLICY "Restauracja i Admin mogą edytować ustawienia" 
   ON public.system_settings FOR UPDATE 
   TO authenticated 
@@ -53,12 +55,14 @@ CREATE POLICY "Restauracja i Admin mogą edytować ustawienia"
   );
 
 -- Zapobiegamy usuwaniu jedynego wiersza
+DROP POLICY IF EXISTS "Zakaz usuwania ustawień" ON public.system_settings;
 CREATE POLICY "Zakaz usuwania ustawień"
   ON public.system_settings FOR DELETE
   TO authenticated
   USING (false);
 
 -- Zapobiegamy wstawianiu dodatkowych wierszy
+DROP POLICY IF EXISTS "Zakaz dodawania nowych wierszy (dozwolony tylko Update)" ON public.system_settings;
 CREATE POLICY "Zakaz dodawania nowych wierszy (dozwolony tylko Update)"
   ON public.system_settings FOR INSERT
   TO authenticated
