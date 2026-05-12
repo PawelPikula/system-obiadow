@@ -103,7 +103,7 @@ export default function HistoriaPage() {
     
     const { error } = await supabase
       .from('orders')
-      .update({ status: 'cancelled_by_user' })
+      .update({ status: 'cancelled' })
       .eq('id', orderId);
 
     if (error) {
@@ -166,7 +166,7 @@ export default function HistoriaPage() {
             {orders.map((order) => {
               // Sprawdzamy czy jedzenie już powinno być dostarczone (data dostawy <= dzisiaj)
               const isDelivered = (order.delivery_date || order.order_date) <= today;
-              const isCancelled = order.status === 'cancelled_by_user' || order.status === 'cancelled_by_restaurant';
+              const isCancelled = order.status === 'cancelled';
               const isCancelable = !isCancelled && canCancelOrder(order.delivery_date, order.shift);
 
               return (
