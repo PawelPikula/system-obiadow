@@ -31,10 +31,15 @@ function getDayDiff(dateStr) {
   return Math.round((new Date(y, m - 1, d) - today) / 86400000);
 }
 
-function DatePickerDropdown({ year, month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, onPrevYear, onNextYear }) {
+function DatePickerDropdown({ year, month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, onPrevYear, onNextYear, pos }) {
   const { startPad, daysInMonth } = getMonthGrid(year, month);
   return (
-    <div className="absolute z-30 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-72">
+    <div
+      className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-72"
+      style={pos
+        ? { position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }
+        : { position: 'absolute', right: 0, top: '100%', marginTop: 8, zIndex: 30 }}
+    >
       <div className="flex items-center justify-between mb-3">
         <button type="button" onClick={onPrevMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">‹</button>
         <span className="font-bold text-slate-800 text-sm">{MONTHS_PL[month]} {year}</span>
@@ -112,6 +117,10 @@ export default function RestauracjaPanel() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [dishSearchQuery, setDishSearchQuery] = useState('');
   const wrapperRef = useRef(null);
+  const datePickerBtnRef = useRef(null);
+  const copyDatePickerBtnRef = useRef(null);
+  const [pickerPos, setPickerPos] = useState(null);
+  const [copyPickerPos, setCopyPickerPos] = useState(null);
 
   // Ustawienia
   const [settings, setSettings] = useState(null);
@@ -690,8 +699,16 @@ export default function RestauracjaPanel() {
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Wybierz dzień</p>
                 <div className="relative">
                   <button
+                    ref={datePickerBtnRef}
                     type="button"
-                    onClick={() => setShowDatePicker(p => !p)}
+                    onClick={() => {
+                      if (!showDatePicker) {
+                        const rect = datePickerBtnRef.current.getBoundingClientRect();
+                        const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292));
+                        setPickerPos({ top: rect.bottom + 8, left });
+                      }
+                      setShowDatePicker(p => !p);
+                    }}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-white/60 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all backdrop-blur-sm"
                   >
                     📅 Wybierz datę
@@ -702,6 +719,7 @@ export default function RestauracjaPanel() {
                       <DatePickerDropdown
                         year={pickerYear} month={pickerMonth}
                         selectedDate={selectedDate}
+                        pos={pickerPos}
                         onSelectDate={(d) => { setSelectedDate(d); setCalendarOffset(getDayDiff(d)); setShowDatePicker(false); }}
                         onPrevMonth={() => pickerMonth === 0 ? (setPickerYear(y => y - 1), setPickerMonth(11)) : setPickerMonth(m => m - 1)}
                         onNextMonth={() => pickerMonth === 11 ? (setPickerYear(y => y + 1), setPickerMonth(0)) : setPickerMonth(m => m + 1)}
@@ -800,7 +818,17 @@ export default function RestauracjaPanel() {
                           <button type="button" onClick={() => setCopyCalOffset(p => p + 1)}
                             className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all">›</button>
                           <div className="relative shrink-0">
-                            <button type="button" onClick={() => setShowCopyDatePicker(p => !p)}
+                            <button
+                              ref={copyDatePickerBtnRef}
+                              type="button"
+                              onClick={() => {
+                                if (!showCopyDatePicker) {
+                                  const rect = copyDatePickerBtnRef.current.getBoundingClientRect();
+                                  const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292));
+                                  setCopyPickerPos({ top: rect.bottom + 8, left });
+                                }
+                                setShowCopyDatePicker(p => !p);
+                              }}
                               className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white hover:shadow-sm transition-all text-base backdrop-blur-sm" title="Wybierz datę">📅</button>
                             {showCopyDatePicker && (
                               <>
@@ -808,6 +836,7 @@ export default function RestauracjaPanel() {
                                 <DatePickerDropdown
                                   year={copyPickerYear} month={copyPickerMonth}
                                   selectedDate={copySourceDate}
+                                  pos={copyPickerPos}
                                   onSelectDate={(d) => { setCopySourceDate(d); setCopyCalOffset(getDayDiff(d)); setShowCopyDatePicker(false); }}
                                   onPrevMonth={() => copyPickerMonth === 0 ? (setCopyPickerYear(y => y - 1), setCopyPickerMonth(11)) : setCopyPickerMonth(m => m - 1)}
                                   onNextMonth={() => copyPickerMonth === 11 ? (setCopyPickerYear(y => y + 1), setCopyPickerMonth(0)) : setCopyPickerMonth(m => m + 1)}
