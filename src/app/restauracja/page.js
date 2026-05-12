@@ -46,6 +46,12 @@ export default function RestauracjaPanel() {
   // Ustawienia
   const [settings, setSettings] = useState(null);
 
+  // Kopiowanie menu z poprzednich dni
+  const [showCopyPanel, setShowCopyPanel] = useState(false);
+  const [pastMenuItems, setPastMenuItems] = useState([]);
+  const [copySourceDate, setCopySourceDate] = useState('');
+  const [copyingAll, setCopyingAll] = useState(false);
+
   // 1. Inicjalizacja przy starcie
   useEffect(() => {
     const days = [];
@@ -377,6 +383,56 @@ export default function RestauracjaPanel() {
     }
   }
 
+  async function fetchPastMenu() {
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
+    const from = new Date();
+    from.setDate(from.getDate() - 30);
+    const fromStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(from);
+    const { data } = await supabase
+      .from('menu_items')
+      .select('id, name, price, available_date')
+      .lt('available_date', today)
+      .gte('available_date', fromStr)
+      .order('available_date', { ascending: false });
+    if (data) setPastMenuItems(data);
+  }
+
+  function toggleCopyPanel() {
+    if (!showCopyPanel && pastMenuItems.length === 0) fetchPastMenu();
+    setShowCopyPanel(prev => !prev);
+    setCopySourceDate('');
+  }
+
+  async function handleCopyDish(dish) {
+    const { error } = await supabase.from('menu_items').insert([{
+      name: dish.name,
+      price: dish.price,
+      available_date: selectedDate,
+    }]);
+    if (error) {
+      toast.error('Błąd kopiowania: ' + error.message);
+    } else {
+      toast.success(`"${dish.name}" dodano na ${selectedDate}.`);
+      fetchRestaurantData();
+    }
+  }
+
+  async function handleCopyAll() {
+    const items = pastMenuItems
+      .filter(i => i.available_date === copySourceDate)
+      .map(d => ({ name: d.name, price: d.price, available_date: selectedDate }));
+    if (items.length === 0) return;
+    setCopyingAll(true);
+    const { error } = await supabase.from('menu_items').insert(items);
+    setCopyingAll(false);
+    if (error) {
+      toast.error('Błąd kopiowania: ' + error.message);
+    } else {
+      toast.success(`Skopiowano ${items.length} dań na ${selectedDate}.`);
+      fetchRestaurantData();
+    }
+  }
+
   // Uruchamianie drukowania z odpowiednim układem
   const handlePrint = (mode, shift = 'all') => {
     setPrintMode(mode);
@@ -614,6 +670,89 @@ export default function RestauracjaPanel() {
                       <button type="submit" className="w-1/2 bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-black rounded-2xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-[0_4px_14px_0_rgba(79,70,229,0.39)] hover:shadow-[0_6px_20px_rgba(79,70,229,0.23)] active:scale-95">DODAJ DO MENU</button>
                     </div>
                   </form>
+                </div>
+
+                {/* KOPIOWANIE Z POPRZEDNICH DNI */}
+                <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
+                  <button
+                    type="button"
+                    onClick={toggleCopyPanel}
+                    className="w-full flex justify-between items-center"
+                  >
+                    <h2 className="text-lg font-heading font-black text-slate-800 flex items-center gap-2">
+                      <span>📋</span> Kopiuj z poprzednich dni
+                    </h2>
+                    <span className={`text-slate-400 text-xs font-bold transition-transform duration-300 ${showCopyPanel ? 'rotate-180' : ''}`}>▼</span>
+                  </button>
+
+                  {showCopyPanel && (() => {
+                    const pastDates = [...new Set(pastMenuItems.map(i => i.available_date))];
+                    const copySourceItems = pastMenuItems.filter(i => i.available_date === copySourceDate);
+                    return (
+                      <div className="mt-5">
+                        {pastDates.length === 0 ? (
+                          <p className="text-slate-400 italic text-center py-4 bg-white/40 rounded-2xl border border-dashed border-slate-300">
+                            Brak historii menu z ostatnich 30 dni.
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Wybierz dzień źródłowy:</p>
+                            <div className="flex flex-wrap gap-2 mb-5">
+                              {pastDates.map(date => (
+                                <button
+                                  key={date}
+                                  type="button"
+                                  onClick={() => setCopySourceDate(date)}
+                                  className={`px-3 py-1.5 rounded-xl text-sm font-bold transition-all ${
+                                    copySourceDate === date
+                                      ? 'bg-blue-600 text-white shadow-md'
+                                      : 'bg-white/60 text-slate-600 border border-slate-200 hover:bg-white hover:shadow-sm'
+                                  }`}
+                                >
+                                  {date}
+                                </button>
+                              ))}
+                            </div>
+
+                            {copySourceDate && (
+                              <>
+                                <div className="flex justify-between items-center mb-3">
+                                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                    Dania z {copySourceDate}:
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={handleCopyAll}
+                                    disabled={copyingAll}
+                                    className="text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-1.5 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:transform-none"
+                                  >
+                                    {copyingAll ? 'Kopiowanie…' : 'Kopiuj wszystkie'}
+                                  </button>
+                                </div>
+                                <ul className="space-y-2">
+                                  {copySourceItems.map(item => (
+                                    <li key={item.id} className="flex justify-between items-center p-3 bg-white/60 rounded-xl border border-slate-200/50 hover:bg-white transition-all">
+                                      <div>
+                                        <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                                        <p className="text-indigo-600 font-black text-xs">{item.price} zł</p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyDish(item)}
+                                        className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors shadow-sm whitespace-nowrap"
+                                      >
+                                        + Dodaj
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
