@@ -83,6 +83,13 @@ export default function Home() {
             >
               Zamówienia
             </Link>
+            <Link
+              href="/ustawienia"
+              className="px-4 py-2 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm"
+              aria-label="Ustawienia"
+            >
+              ⚙
+            </Link>
             <button
               onClick={handleSignOut}
               className="px-4 py-2 bg-red-50/80 border border-red-100 text-red-600 rounded-xl text-sm font-bold hover:bg-red-100 hover:shadow-md transition-all backdrop-blur-sm"
