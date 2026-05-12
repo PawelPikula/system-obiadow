@@ -22,6 +22,7 @@ export default function RestauracjaPanel() {
   const [shift1Summary, setShift1Summary] = useState({});
   const [shift2Summary, setShift2Summary] = useState({});
   const [detailedOrders, setDetailedOrders] = useState([]); 
+  const [activeOrders, setActiveOrders] = useState([]);
 
   // Statystyki
   const [statsData, setStatsData] = useState({
@@ -109,7 +110,9 @@ export default function RestauracjaPanel() {
     const { data } = await supabase
       .from('orders')
       .select(`
+        id,
         shift,
+        created_at,
         profiles ( first_name, last_name, companies ( name ) ),
         order_items ( quantity, menu_items ( name ) )
       `)
@@ -118,18 +121,22 @@ export default function RestauracjaPanel() {
 
     const s1 = {}; const s2 = {};
     const detailedList = [];
+    const activeList = [];
       
     if (data) {
       data.forEach(order => {
         const target = order.shift === 1 ? s1 : s2;
         const personName = `${order.profiles?.first_name} ${order.profiles?.last_name}`;
         const companyName = order.profiles?.companies?.name || 'Indywidualny';
+        
+        let dishesStr = [];
 
         order.order_items.forEach(item => {
           const dishName = item.menu_items.name;
           const qty = item.quantity;
           
           target[dishName] = (target[dishName] || 0) + qty;
+          dishesStr.push(`${qty}x ${dishName}`);
 
           for(let i=0; i < qty; i++) {
             detailedList.push({
@@ -140,6 +147,15 @@ export default function RestauracjaPanel() {
             });
           }
         });
+
+        activeList.push({
+          id: order.id,
+          shift: order.shift,
+          person: personName,
+          company: companyName,
+          dishes: dishesStr.join(', '),
+          createdAt: new Date(order.created_at).toLocaleString('pl-PL')
+        });
       });
     }
     
@@ -147,6 +163,9 @@ export default function RestauracjaPanel() {
     setShift2Summary(s2);
     detailedList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
     setDetailedOrders(detailedList);
+    
+    activeList.sort((a, b) => a.shift - b.shift || a.id - b.id);
+    setActiveOrders(activeList);
   }
 
   // Pobieranie statystyk
@@ -229,6 +248,38 @@ export default function RestauracjaPanel() {
     }
     setStatsLoading(false);
   }
+
+  const canCancel = (shift) => {
+    const now = new Date();
+    const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
+    
+    if (selectedDate > todayStr) return true;
+    if (selectedDate < todayStr) return false;
+    
+    // Jeśli to dzisiaj, sprawdzamy godzinę
+    const currentHour = now.getHours() + now.getMinutes() / 60;
+    if (shift === 1 && currentHour < 9) return true;
+    if (shift === 2 && currentHour < 12) return true;
+    
+    return false;
+  };
+
+  const handleCancelOrder = async (orderId) => {
+    if (!confirm('Czy na pewno chcesz anulować to zamówienie? Nie można tego cofnąć.')) return;
+    
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'cancelled_by_restaurant' })
+      .eq('id', orderId);
+      
+    if (error) {
+      toast.error('Błąd podczas anulowania: ' + error.message);
+    } else {
+      toast.success('Zamówienie zostało pomyślnie anulowane.');
+      fetchProduction();
+      if (activeTab === 'statystyki') fetchStatistics();
+    }
+  };
 
   // Funkcje obsługi formularza (Których wcześniej zabrakło!)
   const handleNameChange = (e) => {
@@ -644,6 +695,54 @@ export default function RestauracjaPanel() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </div>
+
+              {/* LISTA ZAMÓWIEŃ DO ZARZĄDZANIA (ANULOWANIA) */}
+              <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50 mt-8">
+                <h3 className="text-xl font-heading font-black text-slate-800 mb-6 flex items-center gap-2"><span>🛡️</span> Zarządzanie Zamówieniami na ten dzień:</h3>
+                
+                {activeOrders.length === 0 ? (
+                  <div className="p-12 text-center bg-white/40 rounded-2xl border-2 border-dashed border-slate-300">
+                    <p className="text-slate-500 font-medium">Brak aktywnych zamówień.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {activeOrders.map(order => {
+                      const isCancelable = canCancel(order.shift);
+                      return (
+                        <div key={order.id} className="bg-white/60 p-5 rounded-2xl border border-slate-200/50 shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4 hover:bg-white hover:shadow-md transition-all">
+                          <div>
+                            <div className="flex items-center gap-3 mb-1">
+                              <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">ID: {order.id}</span>
+                              <span className={`text-xs font-bold px-2 py-1 rounded-md ${order.shift === 1 ? 'bg-orange-100 text-orange-700' : 'bg-indigo-100 text-indigo-700'}`}>ZM {order.shift}</span>
+                              <span className="font-bold text-slate-800">{order.person}</span>
+                              <span className="text-xs text-slate-500 uppercase tracking-wider">({order.company})</span>
+                            </div>
+                            <p className="font-black text-slate-700">{order.dishes}</p>
+                            <p className="text-[10px] text-slate-400 mt-1">Złożono: {order.createdAt}</p>
+                          </div>
+                          
+                          <div>
+                            {isCancelable ? (
+                              <button onClick={() => handleCancelOrder(order.id)} className="w-full md:w-auto bg-white text-red-500 border border-red-200 px-4 py-2 rounded-xl font-bold text-sm hover:bg-red-50 hover:border-red-300 shadow-sm transition-all active:scale-95">
+                                Anuluj Zamówienie
+                              </button>
+                            ) : (
+                              <div className="text-center md:text-right">
+                                <button disabled className="w-full md:w-auto bg-slate-100 text-slate-400 border border-slate-200 px-4 py-2 rounded-xl font-bold text-sm cursor-not-allowed">
+                                  Czas minął
+                                </button>
+                                <p className="text-[10px] text-slate-400 mt-1">
+                                  (Limit dla ZM {order.shift}: {order.shift === 1 ? '09:00' : '12:00'})
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
