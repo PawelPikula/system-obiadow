@@ -169,6 +169,15 @@ export default function RestauracjaPanel() {
   });
   const [statsLoading, setStatsLoading] = useState(false);
 
+  // Faktury
+  const [invoiceMonth, setInvoiceMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [invoiceData, setInvoiceData] = useState(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceNumbers, setInvoiceNumbers] = useState({ revenue: null, cost: null });
+
   // Formularz i autouzupełnianie
   const [dishDictionary, setDishDictionary] = useState([]);
   const [newName, setNewName] = useState('');
@@ -218,6 +227,10 @@ export default function RestauracjaPanel() {
       fetchStatistics(statsMonth);
     }
   }, [activeTab, statsMonth]);
+
+  useEffect(() => {
+    if (activeTab === 'faktury') fetchInvoiceData(invoiceMonth);
+  }, [activeTab, invoiceMonth]);
 
   // Auto-odświeżanie produkcji co 60 sekund
   useEffect(() => {
@@ -430,6 +443,62 @@ export default function RestauracjaPanel() {
     setStatsLoading(false);
   }
 
+  async function fetchInvoiceData(yearMonth) {
+    setInvoiceLoading(true);
+    setInvoiceData(null);
+    const [y, m] = yearMonth.split('-').map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const monthStart = `${yearMonth}-01`;
+    const monthEnd = `${yearMonth}-${String(daysInMonth).padStart(2, '0')}`;
+
+    const [ordersRes, revNumRes, costNumRes] = await Promise.all([
+      supabase
+        .from('orders')
+        .select(`id, total_price, employer_paid, status, delivery_date, order_items(quantity), profiles(companies(id, name))`)
+        .gte('delivery_date', monthStart)
+        .lte('delivery_date', monthEnd)
+        .not('status', 'in', '("cancelled","refunded")'),
+      supabase.rpc('get_or_create_invoice_number', { p_year_month: yearMonth, p_type: 'revenue' }),
+      supabase.rpc('get_or_create_invoice_number', { p_year_month: yearMonth, p_type: 'cost' }),
+    ]);
+
+    if (ordersRes.error) {
+      toast.error('Błąd wczytywania faktur: ' + ordersRes.error.message);
+      setInvoiceLoading(false);
+      return;
+    }
+
+    const orders = ordersRes.data || [];
+    const revNum = revNumRes.data || `FV/${y}/${String(m).padStart(2, '0')}`;
+    const costNum = costNumRes.data || `FK/${y}/${String(m).padStart(2, '0')}`;
+
+    setInvoiceNumbers({ revenue: revNum, cost: costNum });
+
+    const revenueGross = orders.reduce((s, o) => s + (o.total_price || 0), 0);
+    const revenueNet = revenueGross / 1.08;
+    const totalMeals = orders.reduce((s, o) => s + (o.order_items?.reduce((ss, i) => ss + (i.quantity || 0), 0) || 0), 0);
+
+    const byCompany = {};
+    for (const order of orders) {
+      if (!order.employer_paid || order.employer_paid <= 0) continue;
+      const cId = order.profiles?.companies?.id || '__none__';
+      const cName = order.profiles?.companies?.name || 'Nieznana firma';
+      if (!byCompany[cId]) byCompany[cId] = { name: cName, gross: 0, meals: 0 };
+      byCompany[cId].gross += order.employer_paid;
+      byCompany[cId].meals += order.order_items?.reduce((s, i) => s + (i.quantity || 0), 0) || 0;
+    }
+    const costCompanies = Object.values(byCompany).map(c => ({ ...c, net: c.gross / 1.08, vat: c.gross - c.gross / 1.08 }));
+    const costGross = costCompanies.reduce((s, c) => s + c.gross, 0);
+
+    setInvoiceData({
+      yearMonth,
+      orderCount: orders.length,
+      revenue: { gross: revenueGross, net: revenueNet, vat: revenueGross - revenueNet, meals: totalMeals },
+      cost: { gross: costGross, net: costGross / 1.08, vat: costGross - costGross / 1.08, companies: costCompanies },
+    });
+    setInvoiceLoading(false);
+  }
+
   const canCancel = (shift) => {
     if (!settings) return false;
     
@@ -470,11 +539,68 @@ export default function RestauracjaPanel() {
       cancel_cutoff_shift1_prev_day: settings.cancel_cutoff_shift1_prev_day,
       cancel_cutoff_shift2: settings.cancel_cutoff_shift2,
       cancel_cutoff_shift2_prev_day: settings.cancel_cutoff_shift2_prev_day,
+      restaurant_name: settings.restaurant_name || '',
+      restaurant_nip: settings.restaurant_nip || '',
+      restaurant_address: settings.restaurant_address || '',
+      restaurant_bank_account: settings.restaurant_bank_account || '',
+      invoice_payment_days: settings.invoice_payment_days || 14,
     }).eq('id', 1);
     
     if (error) toast.error('Błąd zapisu ustawień: ' + error.message);
     else toast.success('Ustawienia pomyślnie zapisane!');
   };
+
+  function buildInvoiceHTML(type) {
+    if (!invoiceData || !settings) return '';
+    const now = new Date();
+    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const isDraft = invoiceData.yearMonth >= currentYM;
+    const [y, m] = invoiceData.yearMonth.split('-').map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const invoiceNum = type === 'revenue' ? invoiceNumbers.revenue : invoiceNumbers.cost;
+    const issueDate = isDraft
+      ? new Intl.DateTimeFormat('pl-PL').format(now)
+      : `${String(daysInMonth).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`;
+    const salePeriod = `01.${String(m).padStart(2, '0')}.${y}–${String(daysInMonth).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`;
+    const payDue = new Date(y, m - 1, daysInMonth);
+    payDue.setDate(payDue.getDate() + (settings.invoice_payment_days || 14));
+    const paymentDate = new Intl.DateTimeFormat('pl-PL').format(payDue);
+    const rName = settings.restaurant_name || 'Restauracja';
+    const rNIP  = settings.restaurant_nip || '';
+    const rAddr = settings.restaurant_address || '';
+    const rBank = settings.restaurant_bank_account || '';
+    const payDays = settings.invoice_payment_days || 14;
+    const monthLabel = `${MONTHS_PL[m - 1]} ${y}`;
+    const fmt = (v) => Number(v).toFixed(2).replace('.', ',') + ' zł';
+    const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;background:#fff;padding:15mm}.hdr{text-align:center;border-bottom:3px solid #1e293b;padding-bottom:12px;margin-bottom:18px}.hdr h1{font-size:22px;font-weight:900;letter-spacing:1px}.hdr .num{font-size:13px;color:#475569;margin-top:4px}.draft{display:inline-block;background:#fbbf24;color:#78350f;font-weight:900;font-size:9px;padding:2px 8px;border-radius:4px;margin-top:6px;text-transform:uppercase;letter-spacing:.05em}.meta{display:flex;justify-content:space-between;font-size:11px;margin-bottom:18px}.parties{display:flex;gap:16px;margin-bottom:20px}.party{flex:1;border:1px solid #e2e8f0;border-radius:6px;padding:10px}.party-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:700;margin-bottom:6px}.party-name{font-size:13px;font-weight:700;margin-bottom:3px}.party-det{color:#475569;line-height:1.6}table{width:100%;border-collapse:collapse;margin-bottom:14px}th{background:#1e293b;color:#fff;padding:7px 6px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.03em}td{padding:7px 6px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}.tr{text-align:right}.tot-box{display:flex;justify-content:flex-end;margin-bottom:18px}.tot-tbl{width:280px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden}.tot-tbl td{padding:5px 12px;border:none;border-bottom:1px solid #f1f5f9;font-size:11px}.tot-tbl .grand{background:#1e293b;color:#fff;font-weight:700;font-size:13px;border:none}.pay{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:18px}.pay h3{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:6px;font-weight:700}.pay p{line-height:1.8}.sigs{display:flex;gap:40px;margin-top:40px;padding-top:10px}.sig{flex:1;font-size:10px;color:#94a3b8;padding-top:36px;border-top:1px solid #1a1a1a}@media print{body{padding:10mm}@page{margin:10mm;size:A4}}`;
+    const partiesHTML = `<div class="parties"><div class="party"><div class="party-lbl">Sprzedawca</div><div class="party-name">${rName}</div>${rNIP ? `<div class="party-det">NIP: ${rNIP}</div>` : ''}<div class="party-det">${rAddr}</div></div><div class="party"><div class="party-lbl">Nabywca</div><div class="party-name">${type === 'revenue' ? 'Nabywcy zbiorczy' : 'Pracodawcy — zestawienie zbiorcze'}</div><div class="party-det">Okres rozliczeniowy: ${salePeriod}</div></div></div>`;
+    const payHTML = `<div class="pay"><h3>Informacje o płatności</h3><p><strong>Forma płatności:</strong> Przelew bankowy</p><p><strong>Nr rachunku:</strong> ${rBank || '—'}</p><p><strong>Termin płatności:</strong> ${paymentDate} (${payDays} dni)</p></div>`;
+    const sigsHTML = `<div class="sigs"><div class="sig">Wystawił(a): ${rName}</div><div class="sig">Podpis i pieczęć nabywcy</div></div>`;
+
+    let tableHTML, totHTML;
+    if (type === 'revenue') {
+      const { gross, net, vat, meals } = invoiceData.revenue;
+      const unitNet = meals > 0 ? net / meals : 0;
+      tableHTML = `<table><thead><tr><th>Lp.</th><th>Nazwa usługi</th><th class="tr">Ilość</th><th>J.m.</th><th class="tr">Cena netto</th><th class="tr">VAT%</th><th class="tr">Kwota VAT</th><th class="tr">Wartość brutto</th></tr></thead><tbody><tr><td>1</td><td>Usługa cateringowa — ${monthLabel}</td><td class="tr">${meals}</td><td>porcja</td><td class="tr">${fmt(unitNet)}</td><td class="tr">8%</td><td class="tr">${fmt(vat)}</td><td class="tr">${fmt(gross)}</td></tr></tbody></table>`;
+      totHTML = `<div class="tot-box"><table class="tot-tbl"><tr><td>Razem netto:</td><td class="tr"><strong>${fmt(net)}</strong></td></tr><tr><td>VAT 8%:</td><td class="tr">${fmt(vat)}</td></tr><tr class="grand"><td>RAZEM BRUTTO:</td><td class="tr">${fmt(gross)}</td></tr></table></div>`;
+    } else {
+      const { gross, net, vat, companies } = invoiceData.cost;
+      const rows = companies.map((c, i) => `<tr><td>${i + 1}</td><td>Dofinansowanie posiłków — ${c.name} — ${monthLabel}</td><td class="tr">${c.meals}</td><td>porcja</td><td class="tr">${fmt(c.meals > 0 ? c.net / c.meals : 0)}</td><td class="tr">8%</td><td class="tr">${fmt(c.vat)}</td><td class="tr">${fmt(c.gross)}</td></tr>`).join('');
+      tableHTML = `<table><thead><tr><th>Lp.</th><th>Firma / Usługa</th><th class="tr">Ilość</th><th>J.m.</th><th class="tr">Cena netto</th><th class="tr">VAT%</th><th class="tr">Kwota VAT</th><th class="tr">Wartość brutto</th></tr></thead><tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:#94a3b8">Brak dopłat pracodawcy w tym miesiącu</td></tr>'}</tbody></table>`;
+      totHTML = `<div class="tot-box"><table class="tot-tbl"><tr><td>Razem netto:</td><td class="tr"><strong>${fmt(net)}</strong></td></tr><tr><td>VAT 8%:</td><td class="tr">${fmt(vat)}</td></tr><tr class="grand"><td>RAZEM BRUTTO:</td><td class="tr">${fmt(gross)}</td></tr></table></div>`;
+    }
+
+    const titleType = type === 'revenue' ? 'FAKTURA VAT' : 'FAKTURA VAT — Koszty Pracodawcy';
+    return `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8"><title>${titleType} ${invoiceNum}</title><style>${CSS}</style></head><body onload="window.print()"><div class="hdr"><h1>${titleType}</h1><div class="num">Nr ${invoiceNum}</div>${isDraft ? '<div class="draft">PROJEKT — miesiąc w toku</div>' : ''}</div><div class="meta"><div><strong>Data wystawienia:</strong> ${issueDate}</div><div><strong>Okres sprzedaży:</strong> ${salePeriod}</div></div>${partiesHTML}${tableHTML}${totHTML}${payHTML}${sigsHTML}</body></html>`;
+  }
+
+  function printInvoice(type) {
+    const html = buildInvoiceHTML(type);
+    if (!html) return;
+    const win = window.open('', '_blank', 'width=960,height=1200');
+    win.document.write(html);
+    win.document.close();
+  }
 
   const handleCancelOrder = async (orderId) => {
     if (!confirm('Czy na pewno chcesz anulować to zamówienie? Nie można tego cofnąć.')) return;
@@ -794,6 +920,7 @@ export default function RestauracjaPanel() {
               <button onClick={() => setActiveTab('produkcja')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'produkcja' ? 'bg-white shadow-md text-orange-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🔥 Raporty i naklejki</button>
               <button onClick={() => setActiveTab('statystyki')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'statystyki' ? 'bg-white shadow-md text-green-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📊 Statystyki</button>
               <button onClick={() => setActiveTab('baza')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'baza' ? 'bg-white shadow-md text-purple-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📖 Baza Dań</button>
+              <button onClick={() => setActiveTab('faktury')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'faktury' ? 'bg-white shadow-md text-emerald-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🧾 Faktury</button>
               <button onClick={() => setActiveTab('ustawienia')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'ustawienia' ? 'bg-white shadow-md text-slate-800 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>⚙️ Ustawienia</button>
             </div>
           </header>
@@ -909,7 +1036,7 @@ export default function RestauracjaPanel() {
                               );
                             })}
                           </div>
-                          <button type="button" onClick={() => setCopyCalOffset(p => p + 1)} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all">›</button>
+                          <button type="button" onClick={() => setCopyCalOffset(p => p + 1)} disabled={copyCalOffset >= 0} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed">›</button>
                           <div className="relative shrink-0">
                             <button ref={copyDatePickerBtnRef} type="button" onClick={(e) => { e.stopPropagation(); if (!showCopyDatePicker) { const rect = copyDatePickerBtnRef.current.getBoundingClientRect(); const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292)); setCopyPickerPos({ top: rect.bottom + 8, left }); } setShowCopyDatePicker(p => !p); }} className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white hover:shadow-sm transition-all text-base backdrop-blur-sm" title="Wybierz datę">📅</button>
                             {showCopyDatePicker && (
@@ -1268,6 +1395,34 @@ export default function RestauracjaPanel() {
                     </div>
                   </div>
                   
+                  <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Dane do faktur (sprzedawca)</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nazwa restauracji / firmy</label>
+                        <input type="text" value={settings.restaurant_name || ''} onChange={(e) => setSettings({...settings, restaurant_name: e.target.value})} placeholder="np. Restauracja Smaczna Zupa Sp. z o.o." className="w-full p-3 rounded-lg border border-slate-200 font-medium bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">NIP</label>
+                          <input type="text" value={settings.restaurant_nip || ''} onChange={(e) => setSettings({...settings, restaurant_nip: e.target.value})} placeholder="000-000-00-00" className="w-full p-3 rounded-lg border border-slate-200 font-medium bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Termin płatności (dni)</label>
+                          <input type="number" min="1" max="90" value={settings.invoice_payment_days || 14} onChange={(e) => setSettings({...settings, invoice_payment_days: parseInt(e.target.value) || 14})} className="w-full p-3 rounded-lg border border-slate-200 font-medium bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Adres</label>
+                        <input type="text" value={settings.restaurant_address || ''} onChange={(e) => setSettings({...settings, restaurant_address: e.target.value})} placeholder="ul. Przykładowa 1, 00-001 Warszawa" className="w-full p-3 rounded-lg border border-slate-200 font-medium bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Numer rachunku bankowego</label>
+                        <input type="text" value={settings.restaurant_bank_account || ''} onChange={(e) => setSettings({...settings, restaurant_bank_account: e.target.value})} placeholder="PL 00 0000 0000 0000 0000 0000 0000" className="w-full p-3 rounded-lg border border-slate-200 font-medium bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      </div>
+                    </div>
+                  </div>
+
                   <button onClick={saveSettings} className="w-full mt-4 bg-slate-800 text-white font-bold py-4 rounded-xl hover:bg-slate-900 transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center justify-center gap-2">
                     <span>💾</span> Zapisz Ustawienia
                   </button>
@@ -1303,11 +1458,18 @@ export default function RestauracjaPanel() {
                         </span>
                         <button
                           onClick={() => {
+                            const now = new Date();
+                            const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
                             const [y, m] = statsMonth.split('-').map(Number);
                             const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
-                            setStatsMonth(next);
+                            if (next <= currentYM) setStatsMonth(next);
                           }}
-                          className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white font-black text-slate-500 text-lg transition-all shadow-sm"
+                          disabled={(() => {
+                            const now = new Date();
+                            const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                            return statsMonth >= currentYM;
+                          })()}
+                          className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white font-black text-slate-500 text-lg transition-all shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
                         >›</button>
                       </div>
                     </div>
@@ -1384,6 +1546,191 @@ export default function RestauracjaPanel() {
           )}
 
           {/* --- ZAKŁADKA 4: BAZA DAŃ --- */}
+          {/* --- ZAKŁADKA: FAKTURY --- */}
+          {activeTab === 'faktury' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+              {/* Selektor miesiąca */}
+              <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h2 className="text-3xl font-heading font-black text-slate-800">Faktury <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-600">VAT</span></h2>
+                    <p className="text-sm text-slate-500 mt-1">Faktura przychodowa (FV) i kosztowa (FK) za wybrany miesiąc — 8% VAT, usługa cateringowa</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => { const [y,m]=invoiceMonth.split('-').map(Number); setInvoiceMonth(m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,'0')}`); }}
+                      className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white font-black text-slate-500 text-lg transition-all shadow-sm"
+                    >‹</button>
+                    <span className="font-bold text-slate-700 text-sm min-w-[120px] text-center">
+                      {MONTHS_PL[parseInt(invoiceMonth.split('-')[1],10)-1]} {invoiceMonth.split('-')[0]}
+                    </span>
+                    <button
+                      onClick={() => { const now=new Date(); const cur=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; const [y,m]=invoiceMonth.split('-').map(Number); const next=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,'0')}`; if(next<=cur) setInvoiceMonth(next); }}
+                      disabled={(() => { const now=new Date(); const cur=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; return invoiceMonth>=cur; })()}
+                      className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white font-black text-slate-500 text-lg transition-all shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
+                    >›</button>
+                  </div>
+                </div>
+              </div>
+
+              {invoiceLoading ? (
+                <div className="py-20 flex justify-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-emerald-500"></div>
+                </div>
+              ) : !invoiceData ? (
+                <div className="glass p-12 rounded-3xl text-center border border-slate-200/50">
+                  <p className="text-slate-400 font-medium">Brak danych dla wybranego miesiąca.</p>
+                </div>
+              ) : (() => {
+                const now = new Date();
+                const currentYM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+                const isDraft = invoiceData.yearMonth >= currentYM;
+                const [y,m] = invoiceData.yearMonth.split('-').map(Number);
+                const daysInMonth = new Date(y, m, 0).getDate();
+                const salePeriod = `01.${String(m).padStart(2,'0')}.${y}–${String(daysInMonth).padStart(2,'0')}.${String(m).padStart(2,'0')}.${y}`;
+                const fmt = (v) => Number(v).toFixed(2) + ' zł';
+                const monthLabel = `${MONTHS_PL[m-1]} ${y}`;
+
+                return (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    {/* FAKTURA PRZYCHODOWA */}
+                    <div className="glass rounded-3xl shadow-lg border border-emerald-200/50 overflow-hidden">
+                      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-5 text-white">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-emerald-100 text-xs font-bold uppercase tracking-wider mb-1">Faktura Przychodowa</p>
+                            <p className="text-2xl font-black font-heading">{invoiceNumbers.revenue}</p>
+                          </div>
+                          {isDraft && <span className="bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-wide">Projekt</span>}
+                        </div>
+                        <p className="text-emerald-100 text-xs mt-3">Okres: {salePeriod}</p>
+                      </div>
+                      <div className="p-5 bg-white/80">
+                        {/* Mini invoice body */}
+                        <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <p className="text-slate-400 font-bold uppercase tracking-wider mb-1 text-[9px]">Sprzedawca</p>
+                            <p className="font-bold text-slate-800">{settings?.restaurant_name || '—'}</p>
+                            {settings?.restaurant_nip && <p className="text-slate-500">NIP: {settings.restaurant_nip}</p>}
+                          </div>
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <p className="text-slate-400 font-bold uppercase tracking-wider mb-1 text-[9px]">Nabywca</p>
+                            <p className="font-bold text-slate-800">Nabywcy zbiorczy</p>
+                            <p className="text-slate-500">{invoiceData.orderCount} zamówień</p>
+                          </div>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden mb-4">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-slate-800 text-white">
+                                <th className="text-left p-2 font-bold">Usługa</th>
+                                <th className="text-right p-2 font-bold">Ilość</th>
+                                <th className="text-right p-2 font-bold">VAT</th>
+                                <th className="text-right p-2 font-bold">Brutto</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td className="p-2 font-medium text-slate-700">Usługa cateringowa — {monthLabel}</td>
+                                <td className="p-2 text-right text-slate-600">{invoiceData.revenue.meals} porcji</td>
+                                <td className="p-2 text-right text-slate-600">8%</td>
+                                <td className="p-2 text-right font-black text-slate-800">{fmt(invoiceData.revenue.gross)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="space-y-1 text-xs mb-4">
+                          <div className="flex justify-between text-slate-500"><span>Razem netto:</span><span className="font-medium">{fmt(invoiceData.revenue.net)}</span></div>
+                          <div className="flex justify-between text-slate-500"><span>VAT 8%:</span><span className="font-medium">{fmt(invoiceData.revenue.vat)}</span></div>
+                          <div className="flex justify-between text-emerald-700 font-black text-sm border-t border-slate-200 pt-1 mt-1"><span>RAZEM BRUTTO:</span><span>{fmt(invoiceData.revenue.gross)}</span></div>
+                        </div>
+                        <button
+                          onClick={() => printInvoice('revenue')}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
+                        >
+                          <span>📥</span> Pobierz PDF (Drukuj)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* FAKTURA KOSZTOWA */}
+                    <div className="glass rounded-3xl shadow-lg border border-orange-200/50 overflow-hidden">
+                      <div className="bg-gradient-to-r from-orange-500 to-amber-600 p-5 text-white">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-orange-100 text-xs font-bold uppercase tracking-wider mb-1">Faktura Kosztowa — Pracodawcy</p>
+                            <p className="text-2xl font-black font-heading">{invoiceNumbers.cost}</p>
+                          </div>
+                          {isDraft && <span className="bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-wide">Projekt</span>}
+                        </div>
+                        <p className="text-orange-100 text-xs mt-3">Okres: {salePeriod}</p>
+                      </div>
+                      <div className="p-5 bg-white/80">
+                        <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <p className="text-slate-400 font-bold uppercase tracking-wider mb-1 text-[9px]">Sprzedawca</p>
+                            <p className="font-bold text-slate-800">{settings?.restaurant_name || '—'}</p>
+                            {settings?.restaurant_nip && <p className="text-slate-500">NIP: {settings.restaurant_nip}</p>}
+                          </div>
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <p className="text-slate-400 font-bold uppercase tracking-wider mb-1 text-[9px]">Nabywca</p>
+                            <p className="font-bold text-slate-800">Pracodawcy zbiorczy</p>
+                            <p className="text-slate-500">{invoiceData.cost.companies.length} firm</p>
+                          </div>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden mb-4">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-slate-800 text-white">
+                                <th className="text-left p-2 font-bold">Firma</th>
+                                <th className="text-right p-2 font-bold">Porcji</th>
+                                <th className="text-right p-2 font-bold">VAT</th>
+                                <th className="text-right p-2 font-bold">Brutto</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {invoiceData.cost.companies.length === 0 ? (
+                                <tr><td colSpan={4} className="p-3 text-center text-slate-400">Brak dopłat pracodawcy w tym miesiącu</td></tr>
+                              ) : invoiceData.cost.companies.map((c, i) => (
+                                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                                  <td className="p-2 font-medium text-slate-700 truncate max-w-[120px]">{c.name}</td>
+                                  <td className="p-2 text-right text-slate-600">{c.meals}</td>
+                                  <td className="p-2 text-right text-slate-600">8%</td>
+                                  <td className="p-2 text-right font-black text-slate-800">{fmt(c.gross)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="space-y-1 text-xs mb-4">
+                          <div className="flex justify-between text-slate-500"><span>Razem netto:</span><span className="font-medium">{fmt(invoiceData.cost.net)}</span></div>
+                          <div className="flex justify-between text-slate-500"><span>VAT 8%:</span><span className="font-medium">{fmt(invoiceData.cost.vat)}</span></div>
+                          <div className="flex justify-between text-orange-700 font-black text-sm border-t border-slate-200 pt-1 mt-1"><span>RAZEM BRUTTO:</span><span>{fmt(invoiceData.cost.gross)}</span></div>
+                        </div>
+                        <button
+                          onClick={() => printInvoice('cost')}
+                          disabled={invoiceData.cost.companies.length === 0}
+                          className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <span>📥</span> Pobierz PDF (Drukuj)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Legenda */}
+              {invoiceData && (
+                <div className="glass p-5 rounded-2xl border border-slate-200/50 text-sm text-slate-500">
+                  <p><strong className="text-slate-700">FV (Przychodowa)</strong> — łączny przychód restauracji ze sprzedaży posiłków (wpłaty pracowników + dopłaty pracodawców).</p>
+                  <p className="mt-1"><strong className="text-slate-700">FK (Kosztowa)</strong> — zestawienie dopłat pracodawców do posiłków pracowniczych, z podziałem na firmy. Służy pracodawcom jako dokument kosztowy.</p>
+                  <p className="mt-1 text-xs">Oznaczenie <strong>PROJEKT</strong> znika automatycznie po zakończeniu miesiąca. Stawka VAT: 8% (usługi gastronomiczne). Kliknięcie "Pobierz PDF" otwiera fakturę do druku — w oknie drukowania wybierz "Zapisz jako PDF".</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'baza' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50 mb-8">

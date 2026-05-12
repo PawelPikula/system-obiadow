@@ -22,7 +22,7 @@ export default function KuchniaPanel() {
         orders!inner ( delivery_date, shift, status )
       `)
       .eq('orders.delivery_date', todayStr)
-      .in('orders.status', ['approved', 'paid_via_blik']);
+      .in('orders.status', ['approved', 'paid_via_blik', 'delivered']);
 
     if (error) {
       console.error('kuchnia fetch error', error);

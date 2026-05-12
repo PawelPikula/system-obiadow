@@ -15,6 +15,8 @@ export default function HistoriaPage() {
   const [reviewingItemId, setReviewingItemId] = useState(null);
   const [tempRating, setTempRating] = useState(5);
   const [tempReview, setTempReview] = useState('');
+  const [cancellingId, setCancellingId] = useState(null);
+  const [submittingReviewId, setSubmittingReviewId] = useState(null);
 
   // Filtr miesiąca — domyślnie bieżący
   const [filterMonth, setFilterMonth] = useState(() => {
@@ -51,6 +53,10 @@ export default function HistoriaPage() {
 
     if (ordersData) {
       setOrders(ordersData);
+      if (ordersData.length > 0) {
+        const months = [...new Set(ordersData.map(o => (o.delivery_date || o.order_date).substring(0, 7)))].sort((a, b) => b.localeCompare(a));
+        setFilterMonth(prev => months.includes(prev) ? prev : months[0]);
+      }
     }
     
     const { data: settingsData } = await supabase.from('system_settings').select('*').eq('id', 1).single();
@@ -93,27 +99,28 @@ export default function HistoriaPage() {
   // Funkcja anulowania zamówienia
   const handleCancelOrder = async (orderId) => {
     if (!confirm('Czy na pewno chcesz anulować to zamówienie? Środki nie wrócą na Twoje konto od razu (jeśli dotyczy), skontaktuj się z administratorem jeśli to był błąd.')) return;
-    
+    setCancellingId(orderId);
     const { error } = await supabase
       .from('orders')
       .update({ status: 'cancelled' })
       .eq('id', orderId);
-
+    setCancellingId(null);
     if (error) {
       toast.error('Nie udało się anulować zamówienia: ' + error.message);
     } else {
       toast.success('Zamówienie zostało pomyślnie anulowane.');
-      fetchOrderHistory(); // Odświeżenie danych
+      fetchOrderHistory();
     }
   };
 
   // Funkcja zapisująca ocenę do bazy
   async function submitReview(itemId) {
+    setSubmittingReviewId(itemId);
     const { error } = await supabase
       .from('order_items')
       .update({ rating: tempRating, review_text: tempReview })
       .eq('id', itemId);
-
+    setSubmittingReviewId(null);
     if (error) {
       toast.error('Nie udało się zapisać opinii: ' + error.message);
     } else {
@@ -169,7 +176,7 @@ export default function HistoriaPage() {
         </div>
 
         {/* Selektor miesiąca */}
-        {availableMonths.length > 1 && (
+        {availableMonths.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-2 mb-6" style={{ scrollbarWidth: 'none' }}>
             {availableMonths.map(ym => (
               <button
@@ -197,9 +204,9 @@ export default function HistoriaPage() {
           <div className="flex flex-col gap-4">
             {filteredOrders.map((order) => {
               // Sprawdzamy czy jedzenie już powinno być dostarczone (data dostawy <= dzisiaj)
-              const isDelivered = (order.delivery_date || order.order_date) <= today;
+              const isDelivered = order.status === 'delivered' || (order.delivery_date || order.order_date) <= today;
               const isCancelled = order.status === 'cancelled';
-              const isCancelable = !isCancelled && canCancelOrder(order.delivery_date, order.shift);
+              const isCancelable = !isCancelled && order.status !== 'delivered' && canCancelOrder(order.delivery_date, order.shift);
 
               return (
                 <div key={order.id} className={`bg-white p-5 rounded-3xl shadow-sm border ${isCancelled ? 'border-red-200 opacity-75' : 'border-slate-200'} transition-all`}>
@@ -218,11 +225,12 @@ export default function HistoriaPage() {
                     <div className="flex flex-col items-end gap-2">
                       <p className={`text-xl font-black ${isCancelled ? "text-slate-400 line-through" : ""}`}>{order.employee_paid.toFixed(2)} zł</p>
                       {isCancelable && (
-                        <button 
+                        <button
                           onClick={() => handleCancelOrder(order.id)}
-                          className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-3 py-1 rounded-lg hover:bg-red-100 transition-colors shadow-sm"
+                          disabled={cancellingId === order.id}
+                          className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-3 py-1 rounded-lg hover:bg-red-100 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Anuluj Zamówienie
+                          {cancellingId === order.id ? 'Anulowanie...' : 'Anuluj Zamówienie'}
                         </button>
                       )}
                     </div>
@@ -288,7 +296,13 @@ export default function HistoriaPage() {
                             />
                             
                             <div className="flex gap-2">
-                              <button onClick={() => submitReview(item.id)} className="bg-black text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-800 transition">Zapisz opinię</button>
+                              <button
+                                onClick={() => submitReview(item.id)}
+                                disabled={submittingReviewId === item.id}
+                                className="bg-black text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {submittingReviewId === item.id ? 'Zapisywanie...' : 'Zapisz opinię'}
+                              </button>
                               <button onClick={() => setReviewingItemId(null)} className="bg-slate-200 text-slate-600 text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-300 transition">Anuluj</button>
                             </div>
                           </div>

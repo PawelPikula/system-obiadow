@@ -250,13 +250,13 @@ export default function AdminPanel() {
         {/* ZAKŁADKI */}
         <div className="flex gap-2 bg-white/50 p-1.5 rounded-2xl backdrop-blur-sm border border-slate-200/50 mb-8">
           <button
-            onClick={() => setActiveTab('users')}
+            onClick={() => { setActiveTab('users'); setSelectedCompanyId(null); }}
             className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'users' ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}
           >
             👥 Pracownicy
           </button>
           <button
-            onClick={() => setActiveTab('companies')}
+            onClick={() => { setActiveTab('companies'); setSelectedCompanyId(null); }}
             className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'companies' ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}
           >
             🏢 Firmy

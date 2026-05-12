@@ -7,7 +7,6 @@ import MenuCart from '../components/MenuCart';
 
 export default function Home() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,15 +21,18 @@ export default function Home() {
         return;
       }
       if (cancelled) return;
-      setUser(session.user);
 
       const { data: profileData } = await supabase
         .from('profiles')
-        .select(`first_name, last_name, companies ( name, payment_model, daily_subsidy )`)
+        .select(`first_name, last_name, role, companies ( name, payment_model, daily_subsidy )`)
         .eq('id', session.user.id)
         .single();
 
       if (cancelled) return;
+
+      if (profileData?.role === 'admin') { router.replace('/admin'); return; }
+      if (profileData?.role === 'restaurant') { router.replace('/restauracja'); return; }
+
       setProfile(profileData);
       setLoading(false);
     }
@@ -106,7 +108,7 @@ export default function Home() {
             <div className="mt-4 animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500 mx-auto" />
           </div>
         ) : (
-          <MenuCart userProfile={profile} userId={user.id} />
+          <MenuCart userProfile={profile} />
         )}
       </div>
     </main>
