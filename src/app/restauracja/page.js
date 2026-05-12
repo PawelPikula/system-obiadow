@@ -373,64 +373,16 @@ export default function RestauracjaPanel() {
       const currentYM = todayStr.substring(0, 7);
       const isCurrentMonth = yearMonth === currentYM;
 
-      const [y, m] = yearMonth.split('-').map(Number);
-      const daysInMonth = new Date(y, m, 0).getDate();
-      const monthStartStr = `${y}-${String(m).padStart(2, '0')}-01`;
-      const monthEndStr = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
-
-      const { data, error } = await supabase
-        .from('orders')
-        .select(`
-          delivery_date,
-          order_items ( quantity, menu_items ( name, price ) )
-        `)
-        .gte('delivery_date', monthStartStr)
-        .lte('delivery_date', monthEndStr)
-        .in('status', ['approved', 'paid_via_blik']);
+      const { data: summary, error } = await supabase.rpc('get_restaurant_stats', { p_year_month: yearMonth });
 
       if (error) throw error;
 
-      if (data) {
-        let todayRev = 0, todayCount = 0;
-        let weekRev = 0, weekCount = 0;
-        let monthRev = 0, monthCount = 0;
-        const dishCounts = {};
-
-        const [tY, tM, tD] = todayStr.split('-').map(Number);
-        const todayDate = new Date(tY, tM - 1, tD);
-        const sevenDaysAgo = new Date(todayDate);
-        sevenDaysAgo.setDate(todayDate.getDate() - 7);
-        const sevenDaysAgoStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(sevenDaysAgo);
-
-        data.forEach(order => {
-          const isToday = isCurrentMonth && order.delivery_date === todayStr;
-          const isThisWeek = isCurrentMonth && order.delivery_date >= sevenDaysAgoStr;
-
-          order.order_items.forEach(item => {
-            if (!item.menu_items) return;
-            const dishName = item.menu_items.name;
-            const price = item.menu_items.price || 0;
-            const qty = item.quantity || 1;
-            const totalLineValue = price * qty;
-
-            if (isToday) { todayRev += totalLineValue; todayCount += qty; }
-            if (isThisWeek) { weekRev += totalLineValue; weekCount += qty; }
-            monthRev += totalLineValue;
-            monthCount += qty;
-            dishCounts[dishName] = (dishCounts[dishName] || 0) + qty;
-          });
-        });
-
-        const topDishes = Object.entries(dishCounts)
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 10);
-
+      if (summary) {
         setStatsData({
-          today: { revenue: todayRev, count: todayCount },
-          week: { revenue: weekRev, count: weekCount },
-          month: { revenue: monthRev, count: monthCount },
-          topDishes,
+          today: summary.today,
+          week: summary.week,
+          month: summary.month,
+          topDishes: summary.top_dishes || [],
           isCurrentMonth,
         });
       }
@@ -451,46 +403,36 @@ export default function RestauracjaPanel() {
       const monthStart = `${yearMonth}-01`;
       const monthEnd = `${yearMonth}-${String(daysInMonth).padStart(2, '0')}`;
 
-      const [ordersRes, revNumRes, costNumRes] = await Promise.all([
-        supabase
-          .from('orders')
-          .select(`id, total_price, employer_paid, status, delivery_date, order_items(quantity), profiles(companies(id, name))`)
-          .gte('delivery_date', monthStart)
-          .lte('delivery_date', monthEnd)
-          .not('status', 'in', '("cancelled","refunded")'),
+      const [summaryRes, revNumRes, costNumRes] = await Promise.all([
+        supabase.rpc('get_invoice_summary', { p_year_month: yearMonth }),
         supabase.rpc('get_or_create_invoice_number', { p_year_month: yearMonth, p_type: 'revenue' }),
         supabase.rpc('get_or_create_invoice_number', { p_year_month: yearMonth, p_type: 'cost' }),
       ]);
 
-      if (ordersRes.error) throw ordersRes.error;
+      if (summaryRes.error) throw summaryRes.error;
       if (revNumRes.error) throw revNumRes.error;
       if (costNumRes.error) throw costNumRes.error;
 
-    const orders = ordersRes.data || [];
-    const revNum = revNumRes.data || `FV/${y}/${String(m).padStart(2, '0')}`;
-    const costNum = costNumRes.data || `FK/${y}/${String(m).padStart(2, '0')}`;
+      const summary = summaryRes.data;
+      const revNum = revNumRes.data || `FV/${y}/${String(m).padStart(2, '0')}`;
+      const costNum = costNumRes.data || `FK/${y}/${String(m).padStart(2, '0')}`;
 
-    setInvoiceNumbers({ revenue: revNum, cost: costNum });
+      setInvoiceNumbers({ revenue: revNum, cost: costNum });
 
-    const revenueGross = orders.reduce((s, o) => s + (o.total_price || 0), 0);
-    const revenueNet = revenueGross / 1.08;
-    const totalMeals = orders.reduce((s, o) => s + (o.order_items?.reduce((ss, i) => ss + (i.quantity || 0), 0) || 0), 0);
+      const revenueGross = summary.revenue_gross;
+      const revenueNet = revenueGross / 1.08;
+      const totalMeals = summary.total_meals;
 
-    const byCompany = {};
-    for (const order of orders) {
-      if (!order.employer_paid || order.employer_paid <= 0) continue;
-      const cId = order.profiles?.companies?.id || '__none__';
-      const cName = order.profiles?.companies?.name || 'Nieznana firma';
-      if (!byCompany[cId]) byCompany[cId] = { name: cName, gross: 0, meals: 0 };
-      byCompany[cId].gross += order.employer_paid;
-      byCompany[cId].meals += order.order_items?.reduce((s, i) => s + (i.quantity || 0), 0) || 0;
-    }
-    const costCompanies = Object.values(byCompany).map(c => ({ ...c, net: c.gross / 1.08, vat: c.gross - c.gross / 1.08 }));
-    const costGross = costCompanies.reduce((s, c) => s + c.gross, 0);
+      const costCompanies = summary.companies.map(c => ({
+        ...c,
+        net: c.gross / 1.08,
+        vat: c.gross - c.gross / 1.08
+      }));
+      const costGross = costCompanies.reduce((s, c) => s + c.gross, 0);
 
       setInvoiceData({
         yearMonth,
-        orderCount: orders.length,
+        orderCount: summary.order_count,
         revenue: { gross: revenueGross, net: revenueNet, vat: revenueGross - revenueNet, meals: totalMeals },
         cost: { gross: costGross, net: costGross / 1.08, vat: costGross - costGross / 1.08, companies: costCompanies },
       });
@@ -679,7 +621,7 @@ export default function RestauracjaPanel() {
     const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
     const { data } = await supabase
       .from('menu_items')
-      .select('id, name, price, available_date')
+      .select('id, name, price, available_date, max_quantity')
       .lt('available_date', today)
       .order('available_date', { ascending: false });
     if (data) setPastMenuItems(data);
@@ -695,6 +637,7 @@ export default function RestauracjaPanel() {
     const { error } = await supabase.from('menu_items').insert([{
       name: dish.name,
       price: dish.price,
+      max_quantity: dish.max_quantity, // Added
       available_date: selectedDate,
     }]);
     if (error) {
@@ -708,7 +651,12 @@ export default function RestauracjaPanel() {
   async function handleCopyAll() {
     const items = pastMenuItems
       .filter(i => i.available_date === copySourceDate)
-      .map(d => ({ name: d.name, price: d.price, available_date: selectedDate }));
+      .map(d => ({ 
+        name: d.name, 
+        price: d.price, 
+        max_quantity: d.max_quantity, // Added
+        available_date: selectedDate 
+      }));
     if (items.length === 0) return;
     setCopyingAll(true);
     const { error } = await supabase.from('menu_items').insert(items);
