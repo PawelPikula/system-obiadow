@@ -21,8 +21,9 @@ export default function RestauracjaPanel() {
   // Dane do produkcji
   const [shift1Summary, setShift1Summary] = useState({});
   const [shift2Summary, setShift2Summary] = useState({});
-  const [detailedOrders, setDetailedOrders] = useState([]); 
+  const [detailedOrders, setDetailedOrders] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
+  const [cancelledOrders, setCancelledOrders] = useState([]);
 
   // Statystyki
   const [statsData, setStatsData] = useState({
@@ -114,44 +115,37 @@ export default function RestauracjaPanel() {
 
   // Pobieranie produkcji na dany dzień
   async function fetchProduction() {
-    const { data } = await supabase
-      .from('orders')
-      .select(`
-        id,
-        shift,
-        created_at,
-        profiles ( first_name, last_name, companies ( name ) ),
-        order_items ( quantity, menu_items ( name ) )
-      `)
-      .eq('delivery_date', selectedDate)
-      .in('status', ['approved', 'paid_via_blik']);
+    const orderSelect = `
+      id,
+      shift,
+      created_at,
+      profiles ( first_name, last_name, companies ( name ) ),
+      order_items ( quantity, menu_items ( name ) )
+    `;
+
+    const [{ data }, { data: cancelledData }] = await Promise.all([
+      supabase.from('orders').select(orderSelect).eq('delivery_date', selectedDate).in('status', ['approved', 'paid_via_blik']),
+      supabase.from('orders').select(orderSelect).eq('delivery_date', selectedDate).eq('status', 'cancelled'),
+    ]);
 
     const s1 = {}; const s2 = {};
     const detailedList = [];
     const activeList = [];
-      
+
     if (data) {
       data.forEach(order => {
         const target = order.shift === 1 ? s1 : s2;
         const personName = `${order.profiles?.first_name} ${order.profiles?.last_name}`;
         const companyName = order.profiles?.companies?.name || 'Indywidualny';
-        
-        let dishesStr = [];
+        const dishesStr = [];
 
         order.order_items.forEach(item => {
           const dishName = item.menu_items.name;
           const qty = item.quantity;
-          
           target[dishName] = (target[dishName] || 0) + qty;
           dishesStr.push(`${qty}x ${dishName}`);
-
-          for(let i=0; i < qty; i++) {
-            detailedList.push({
-              shift: order.shift,
-              person: personName,
-              company: companyName,
-              dish: dishName
-            });
+          for (let i = 0; i < qty; i++) {
+            detailedList.push({ shift: order.shift, person: personName, company: companyName, dish: dishName });
           }
         });
 
@@ -161,18 +155,36 @@ export default function RestauracjaPanel() {
           person: personName,
           company: companyName,
           dishes: dishesStr.join(', '),
-          createdAt: new Date(order.created_at).toLocaleString('pl-PL')
+          createdAt: new Date(order.created_at).toLocaleString('pl-PL'),
         });
       });
     }
-    
+
+    const cancelledList = [];
+    if (cancelledData) {
+      cancelledData.forEach(order => {
+        const personName = `${order.profiles?.first_name} ${order.profiles?.last_name}`;
+        const companyName = order.profiles?.companies?.name || 'Indywidualny';
+        order.order_items.forEach(item => {
+          cancelledList.push({
+            shift: order.shift,
+            person: personName,
+            company: companyName,
+            dish: item.menu_items.name,
+            quantity: item.quantity,
+          });
+        });
+      });
+      cancelledList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
+    }
+
     setShift1Summary(s1);
     setShift2Summary(s2);
     detailedList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
     setDetailedOrders(detailedList);
-    
     activeList.sort((a, b) => a.shift - b.shift || a.id - b.id);
     setActiveOrders(activeList);
+    setCancelledOrders(cancelledList);
   }
 
   // Pobieranie statystyk
@@ -307,7 +319,7 @@ export default function RestauracjaPanel() {
     
     const { error } = await supabase
       .from('orders')
-      .update({ status: 'cancelled_by_restaurant' })
+      .update({ status: 'cancelled' })
       .eq('id', orderId);
       
     if (error) {
@@ -788,6 +800,42 @@ export default function RestauracjaPanel() {
                   </div>
                 )}
               </div>
+
+              {/* ANULOWANE ZAMÓWIENIA */}
+              {cancelledOrders.length > 0 && (
+                <div className="glass p-8 rounded-3xl shadow-lg border border-red-200/60 mt-8">
+                  <h3 className="text-xl font-heading font-black text-red-600 mb-6 flex items-center gap-2">
+                    <span>🚫</span> Anulowane zamówienia na ten dzień
+                    <span className="ml-2 text-sm font-bold bg-red-100 text-red-600 px-3 py-1 rounded-full">{cancelledOrders.length} porcji</span>
+                  </h3>
+                  <div className="overflow-x-auto rounded-2xl border border-red-100 shadow-sm bg-white/40">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-red-50/80 text-slate-600 text-xs uppercase tracking-wider border-b border-red-100">
+                          <th className="p-5 font-bold">Zmiana</th>
+                          <th className="p-5 font-bold">Danie</th>
+                          <th className="p-5 font-bold">Pracownik</th>
+                          <th className="p-5 font-bold">Firma</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-red-50">
+                        {cancelledOrders.map((order, idx) => (
+                          <tr key={idx} className="hover:bg-red-50/40 transition-colors">
+                            <td className="p-5">
+                              <span className={`font-bold px-3 py-1.5 rounded-lg text-xs tracking-wider shadow-sm ${order.shift === 1 ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
+                                ZM {order.shift}
+                              </span>
+                            </td>
+                            <td className="p-5 font-black text-slate-700 line-through decoration-red-400">{order.quantity > 1 ? `${order.quantity}x ` : ''}{order.dish}</td>
+                            <td className="p-5 text-slate-500 font-medium">{order.person}</td>
+                            <td className="p-5 text-slate-500 font-medium">{order.company}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
             </div>
           )}
