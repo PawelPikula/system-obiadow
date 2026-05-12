@@ -729,18 +729,20 @@ export default function RestauracjaPanel() {
         <div className="print:hidden">
           
           {/* HEADER I ZAKŁADKI */}
-          <header className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 glass p-4 md:p-6 rounded-3xl">
-            <h1 className="text-2xl font-heading font-black text-slate-800 flex items-center gap-2">
-              <span className="text-3xl">👨‍🍳</span> Panel Restauracji
-            </h1>
-            <div className="flex bg-white/50 p-1.5 rounded-2xl backdrop-blur-sm border border-slate-200/50 overflow-x-auto scrollbar-hide">
-              <button onClick={() => setActiveTab('menu')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'menu' ? 'bg-white shadow-md text-blue-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📅 Planowanie Menu</button>
-              <button onClick={() => setActiveTab('produkcja')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'produkcja' ? 'bg-white shadow-md text-orange-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🔥 Produkcja & Raporty</button>
-              <button onClick={() => setActiveTab('statystyki')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'statystyki' ? 'bg-white shadow-md text-green-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📊 Statystyki</button>
-              <button onClick={() => setActiveTab('baza')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'baza' ? 'bg-white shadow-md text-purple-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📖 Baza Dań</button>
-              <button onClick={() => setActiveTab('ustawienia')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'ustawienia' ? 'bg-white shadow-md text-slate-800 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>⚙️ Ustawienia</button>
+          <header className="mb-8 glass p-4 md:p-6 rounded-3xl">
+            <div className="flex justify-between items-center mb-4">
+              <h1 className="text-2xl font-heading font-black text-slate-800 flex items-center gap-2">
+                <span className="text-3xl">👨‍🍳</span> Panel Restauracji
+              </h1>
+              <Link href="/" className="bg-white/60 px-5 py-2.5 rounded-xl shadow-sm border border-slate-200/50 text-sm font-bold text-slate-600 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">Wyjście</Link>
             </div>
-            <Link href="/" className="bg-white/60 px-5 py-2.5 rounded-xl shadow-sm border border-slate-200/50 text-sm font-bold text-slate-600 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">Wyjście</Link>
+            <div className="flex flex-wrap gap-2 bg-white/50 p-1.5 rounded-2xl backdrop-blur-sm border border-slate-200/50">
+              <button onClick={() => setActiveTab('menu')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'menu' ? 'bg-white shadow-md text-blue-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📅 Planowanie Menu</button>
+              <button onClick={() => setActiveTab('produkcja')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'produkcja' ? 'bg-white shadow-md text-orange-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🔥 Raporty i naklejki</button>
+              <button onClick={() => setActiveTab('statystyki')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'statystyki' ? 'bg-white shadow-md text-green-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📊 Statystyki</button>
+              <button onClick={() => setActiveTab('baza')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'baza' ? 'bg-white shadow-md text-purple-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📖 Baza Dań</button>
+              <button onClick={() => setActiveTab('ustawienia')} className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'ustawienia' ? 'bg-white shadow-md text-slate-800 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>⚙️ Ustawienia</button>
+            </div>
           </header>
 
           {/* PASEK Z KALENDARZEM */}
