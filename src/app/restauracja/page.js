@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
@@ -31,42 +32,50 @@ function getDayDiff(dateStr) {
   return Math.round((new Date(y, m - 1, d) - today) / 86400000);
 }
 
-function DatePickerDropdown({ year, month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, onPrevYear, onNextYear, pos }) {
+function DatePickerDropdown({ year, month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, onPrevYear, onNextYear, pos, onClose }) {
   const { startPad, daysInMonth } = getMonthGrid(year, month);
-  return (
+  const containerRef = useRef(null);
+  useEffect(() => {
+    function handleClick() { onClose(); }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [onClose]);
+  if (typeof document === 'undefined' || !pos) return null;
+  return createPortal(
     <div
+      ref={containerRef}
       className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-72"
-      style={pos
-        ? { position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }
-        : { position: 'absolute', right: 0, top: '100%', marginTop: 8, zIndex: 30 }}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+      onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between mb-3">
-        <button type="button" onClick={onPrevMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">‹</button>
-        <span className="font-bold text-slate-800 text-sm">{MONTHS_PL[month]} {year}</span>
-        <button type="button" onClick={onNextMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">›</button>
-      </div>
-      <div className="grid grid-cols-7 mb-1">
-        {DAYS_SHORT.map(d => <div key={d} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>)}
-      </div>
-      <div className="grid grid-cols-7">
-        {Array.from({ length: startPad }, (_, i) => <div key={`p${i}`} />)}
-        {Array.from({ length: daysInMonth }, (_, i) => {
-          const day = i + 1;
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const isSel = selectedDate === dateStr;
-          return (
-            <button key={day} type="button" onClick={() => onSelectDate(dateStr)}
-              className={`p-1.5 text-sm rounded-xl font-bold transition-all ${isSel ? 'bg-blue-600 text-white' : 'hover:bg-slate-100 text-slate-700'}`}
-            >{day}</button>
-          );
-        })}
-      </div>
-      <div className="flex items-center justify-center gap-3 mt-3 pt-3 border-t border-slate-100">
-        <button type="button" onClick={onPrevYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">‹ {year - 1}</button>
-        <span className="text-sm font-black text-slate-700">{year}</span>
-        <button type="button" onClick={onNextYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">{year + 1} ›</button>
-      </div>
-    </div>
+        <div className="flex items-center justify-between mb-3">
+          <button type="button" onClick={onPrevMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">‹</button>
+          <span className="font-bold text-slate-800 text-sm">{MONTHS_PL[month]} {year}</span>
+          <button type="button" onClick={onNextMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">›</button>
+        </div>
+        <div className="grid grid-cols-7 mb-1">
+          {DAYS_SHORT.map(d => <div key={d} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>)}
+        </div>
+        <div className="grid grid-cols-7">
+          {Array.from({ length: startPad }, (_, i) => <div key={`p${i}`} />)}
+          {Array.from({ length: daysInMonth }, (_, i) => {
+            const day = i + 1;
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const isSel = selectedDate === dateStr;
+            return (
+              <button key={day} type="button" onClick={() => onSelectDate(dateStr)}
+                className={`p-1.5 text-sm rounded-xl font-bold transition-all ${isSel ? 'bg-blue-600 text-white' : 'hover:bg-slate-100 text-slate-700'}`}
+              >{day}</button>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-center gap-3 mt-3 pt-3 border-t border-slate-100">
+          <button type="button" onClick={onPrevYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">‹ {year - 1}</button>
+          <span className="text-sm font-black text-slate-700">{year}</span>
+          <button type="button" onClick={onNextYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">{year + 1} ›</button>
+        </div>
+      </div>,
+    document.body
   );
 }
 
@@ -701,7 +710,8 @@ export default function RestauracjaPanel() {
                   <button
                     ref={datePickerBtnRef}
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       if (!showDatePicker) {
                         const rect = datePickerBtnRef.current.getBoundingClientRect();
                         const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292));
@@ -714,19 +724,17 @@ export default function RestauracjaPanel() {
                     📅 Wybierz datę
                   </button>
                   {showDatePicker && (
-                    <>
-                      <div className="fixed inset-0 z-20" onClick={() => setShowDatePicker(false)} />
-                      <DatePickerDropdown
-                        year={pickerYear} month={pickerMonth}
-                        selectedDate={selectedDate}
-                        pos={pickerPos}
-                        onSelectDate={(d) => { setSelectedDate(d); setCalendarOffset(getDayDiff(d)); setShowDatePicker(false); }}
-                        onPrevMonth={() => pickerMonth === 0 ? (setPickerYear(y => y - 1), setPickerMonth(11)) : setPickerMonth(m => m - 1)}
-                        onNextMonth={() => pickerMonth === 11 ? (setPickerYear(y => y + 1), setPickerMonth(0)) : setPickerMonth(m => m + 1)}
-                        onPrevYear={() => setPickerYear(y => y - 1)}
-                        onNextYear={() => setPickerYear(y => y + 1)}
-                      />
-                    </>
+                    <DatePickerDropdown
+                      year={pickerYear} month={pickerMonth}
+                      selectedDate={selectedDate}
+                      pos={pickerPos}
+                      onClose={() => setShowDatePicker(false)}
+                      onSelectDate={(d) => { setSelectedDate(d); setCalendarOffset(getDayDiff(d)); setShowDatePicker(false); }}
+                      onPrevMonth={() => pickerMonth === 0 ? (setPickerYear(y => y - 1), setPickerMonth(11)) : setPickerMonth(m => m - 1)}
+                      onNextMonth={() => pickerMonth === 11 ? (setPickerYear(y => y + 1), setPickerMonth(0)) : setPickerMonth(m => m + 1)}
+                      onPrevYear={() => setPickerYear(y => y - 1)}
+                      onNextYear={() => setPickerYear(y => y + 1)}
+                    />
                   )}
                 </div>
               </div>
@@ -821,7 +829,8 @@ export default function RestauracjaPanel() {
                             <button
                               ref={copyDatePickerBtnRef}
                               type="button"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 if (!showCopyDatePicker) {
                                   const rect = copyDatePickerBtnRef.current.getBoundingClientRect();
                                   const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292));
@@ -831,19 +840,17 @@ export default function RestauracjaPanel() {
                               }}
                               className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white hover:shadow-sm transition-all text-base backdrop-blur-sm" title="Wybierz datę">📅</button>
                             {showCopyDatePicker && (
-                              <>
-                                <div className="fixed inset-0 z-20" onClick={() => setShowCopyDatePicker(false)} />
-                                <DatePickerDropdown
-                                  year={copyPickerYear} month={copyPickerMonth}
-                                  selectedDate={copySourceDate}
-                                  pos={copyPickerPos}
-                                  onSelectDate={(d) => { setCopySourceDate(d); setCopyCalOffset(getDayDiff(d)); setShowCopyDatePicker(false); }}
-                                  onPrevMonth={() => copyPickerMonth === 0 ? (setCopyPickerYear(y => y - 1), setCopyPickerMonth(11)) : setCopyPickerMonth(m => m - 1)}
-                                  onNextMonth={() => copyPickerMonth === 11 ? (setCopyPickerYear(y => y + 1), setCopyPickerMonth(0)) : setCopyPickerMonth(m => m + 1)}
-                                  onPrevYear={() => setCopyPickerYear(y => y - 1)}
-                                  onNextYear={() => setCopyPickerYear(y => y + 1)}
-                                />
-                              </>
+                              <DatePickerDropdown
+                                year={copyPickerYear} month={copyPickerMonth}
+                                selectedDate={copySourceDate}
+                                pos={copyPickerPos}
+                                onClose={() => setShowCopyDatePicker(false)}
+                                onSelectDate={(d) => { setCopySourceDate(d); setCopyCalOffset(getDayDiff(d)); setShowCopyDatePicker(false); }}
+                                onPrevMonth={() => copyPickerMonth === 0 ? (setCopyPickerYear(y => y - 1), setCopyPickerMonth(11)) : setCopyPickerMonth(m => m - 1)}
+                                onNextMonth={() => copyPickerMonth === 11 ? (setCopyPickerYear(y => y + 1), setCopyPickerMonth(0)) : setCopyPickerMonth(m => m + 1)}
+                                onPrevYear={() => setCopyPickerYear(y => y - 1)}
+                                onNextYear={() => setCopyPickerYear(y => y + 1)}
+                              />
                             )}
                           </div>
                         </div>
