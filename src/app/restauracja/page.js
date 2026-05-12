@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 export default function RestauracjaPanel() {
   const [activeTab, setActiveTab] = useState('menu'); 
   const [printMode, setPrintMode] = useState('report'); // 'report' lub 'stickers'
+  const [printShift, setPrintShift] = useState('all'); // 'all', 1, lub 2
   
   // Dane z bazy
   const [allItems, setAllItems] = useState([]);
@@ -276,8 +277,9 @@ export default function RestauracjaPanel() {
   }
 
   // Uruchamianie drukowania z odpowiednim układem
-  const handlePrint = (mode) => {
+  const handlePrint = (mode, shift = 'all') => {
     setPrintMode(mode);
+    setPrintShift(shift);
     setTimeout(() => {
       window.print();
     }, 100);
@@ -316,76 +318,80 @@ export default function RestauracjaPanel() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-12">
+            <div className={`grid grid-cols-1 ${printShift === 'all' ? 'grid-cols-2' : ''} gap-12`}>
               {/* KOLUMNA 1 */}
-              <div>
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="bg-slate-800 text-white w-10 h-10 rounded-full flex items-center justify-center font-black text-xl">1</div>
-                  <h2 className="text-2xl font-black uppercase tracking-wider">Pierwsza Zmiana</h2>
-                </div>
-                
-                {Object.keys(shift1Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
-                  <div className="rounded-2xl overflow-hidden border border-slate-200">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-100 border-b border-slate-200">
-                        <tr>
-                          <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-widest">Danie</th>
-                          <th className="py-3 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Ilość</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {Object.entries(shift1Summary).map(([name, qty]) => (
-                          <tr key={name} className="break-inside-avoid">
-                            <td className="py-4 px-5 font-bold text-lg text-slate-800">{name}</td>
-                            <td className="py-4 px-5 text-right"><span className="text-2xl font-black bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">{qty}</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-slate-50 border-t-2 border-slate-800">
-                        <tr>
-                          <td className="py-4 px-5 font-black uppercase text-sm">Suma porcji:</td>
-                          <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(shift1Summary).reduce((a, b) => a + b, 0)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
+              {(printShift === 'all' || printShift === 1) && (
+                <div>
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="bg-slate-800 text-white w-10 h-10 rounded-full flex items-center justify-center font-black text-xl">1</div>
+                    <h2 className="text-2xl font-black uppercase tracking-wider">Pierwsza Zmiana</h2>
                   </div>
-                )}
-              </div>
+                  
+                  {Object.keys(shift1Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
+                    <div className="rounded-2xl overflow-hidden border border-slate-200">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-100 border-b border-slate-200">
+                          <tr>
+                            <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-widest">Danie</th>
+                            <th className="py-3 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Ilość</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {Object.entries(shift1Summary).map(([name, qty]) => (
+                            <tr key={name} className="break-inside-avoid">
+                              <td className="py-4 px-5 font-bold text-lg text-slate-800">{name}</td>
+                              <td className="py-4 px-5 text-right"><span className="text-2xl font-black bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">{qty}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-slate-50 border-t-2 border-slate-800">
+                          <tr>
+                            <td className="py-4 px-5 font-black uppercase text-sm">Suma porcji:</td>
+                            <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(shift1Summary).reduce((a, b) => a + b, 0)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* KOLUMNA 2 */}
-              <div>
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="bg-slate-800 text-white w-10 h-10 rounded-full flex items-center justify-center font-black text-xl">2</div>
-                  <h2 className="text-2xl font-black uppercase tracking-wider">Druga Zmiana</h2>
-                </div>
-
-                {Object.keys(shift2Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
-                  <div className="rounded-2xl overflow-hidden border border-slate-200">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-100 border-b border-slate-200">
-                        <tr>
-                          <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-widest">Danie</th>
-                          <th className="py-3 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Ilość</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {Object.entries(shift2Summary).map(([name, qty]) => (
-                          <tr key={name} className="break-inside-avoid">
-                            <td className="py-4 px-5 font-bold text-lg text-slate-800">{name}</td>
-                            <td className="py-4 px-5 text-right"><span className="text-2xl font-black bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">{qty}</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-slate-50 border-t-2 border-slate-800">
-                        <tr>
-                          <td className="py-4 px-5 font-black uppercase text-sm">Suma porcji:</td>
-                          <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(shift2Summary).reduce((a, b) => a + b, 0)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
+              {(printShift === 'all' || printShift === 2) && (
+                <div>
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="bg-slate-800 text-white w-10 h-10 rounded-full flex items-center justify-center font-black text-xl">2</div>
+                    <h2 className="text-2xl font-black uppercase tracking-wider">Druga Zmiana</h2>
                   </div>
-                )}
-              </div>
+
+                  {Object.keys(shift2Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
+                    <div className="rounded-2xl overflow-hidden border border-slate-200">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-100 border-b border-slate-200">
+                          <tr>
+                            <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-widest">Danie</th>
+                            <th className="py-3 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Ilość</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {Object.entries(shift2Summary).map(([name, qty]) => (
+                            <tr key={name} className="break-inside-avoid">
+                              <td className="py-4 px-5 font-bold text-lg text-slate-800">{name}</td>
+                              <td className="py-4 px-5 text-right"><span className="text-2xl font-black bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">{qty}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-slate-50 border-t-2 border-slate-800">
+                          <tr>
+                            <td className="py-4 px-5 font-black uppercase text-sm">Suma porcji:</td>
+                            <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(shift2Summary).reduce((a, b) => a + b, 0)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             
             <div className="mt-16 pt-6 border-t border-slate-200 text-center">
@@ -421,7 +427,9 @@ export default function RestauracjaPanel() {
               }
             `}</style>
             <div className="stickers-grid">
-              {detailedOrders.map((order, idx) => (
+              {detailedOrders
+                .filter(order => printShift === 'all' || order.shift === printShift)
+                .map((order, idx) => (
                 <div key={idx} className="sticker font-sans">
                   {/* Górna sekcja - Odbiorca */}
                   <div className="text-center mb-1">
@@ -546,17 +554,28 @@ export default function RestauracjaPanel() {
           {activeTab === 'produkcja' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               
-              <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 glass p-6 rounded-3xl border border-slate-200/50">
-                <h2 className="text-2xl font-heading font-black text-slate-800">Raport dnia: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">{selectedDate}</span></h2>
+              <div className="mb-8 flex flex-col xl:flex-row xl:items-center justify-between gap-6 glass p-6 rounded-3xl border border-slate-200/50">
+                <h2 className="text-2xl font-heading font-black text-slate-800 shrink-0">Raport dnia: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">{selectedDate}</span></h2>
                 
                 {/* PRZYCISKI DRUKOWANIA */}
-                <div className="flex gap-3">
-                  <button onClick={() => handlePrint('report')} className="bg-slate-800 text-white px-5 py-3 rounded-xl font-bold text-sm hover:bg-slate-900 shadow-md flex items-center gap-2 transition-all hover:shadow-lg hover:-translate-y-0.5">
-                    🖨️ Raport Kuchni
-                  </button>
-                  <button onClick={() => handlePrint('stickers')} className="bg-gradient-to-br from-orange-400 to-orange-600 text-white px-5 py-3 rounded-xl font-bold text-sm hover:from-orange-500 hover:to-orange-700 shadow-[0_4px_14px_0_rgba(249,115,22,0.39)] hover:shadow-[0_6px_20px_rgba(249,115,22,0.23)] flex items-center gap-2 transition-all hover:-translate-y-0.5">
-                    🏷️ Drukuj Naklejki
-                  </button>
+                <div className="flex flex-col sm:flex-row gap-4 xl:gap-8 overflow-x-auto pb-2 scrollbar-hide">
+                  <div className="flex flex-col gap-2 min-w-max">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">🖨️ Raport Kuchni</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => handlePrint('report', 'all')} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-900 shadow-sm transition-all hover:-translate-y-0.5">Wszystko</button>
+                      <button onClick={() => handlePrint('report', 1)} className="bg-slate-600 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-slate-700 shadow-sm transition-all hover:-translate-y-0.5">ZM 1</button>
+                      <button onClick={() => handlePrint('report', 2)} className="bg-slate-600 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-slate-700 shadow-sm transition-all hover:-translate-y-0.5">ZM 2</button>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col gap-2 min-w-max">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">🏷️ Naklejki</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => handlePrint('stickers', 'all')} className="bg-gradient-to-br from-orange-400 to-orange-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:from-orange-500 hover:to-orange-700 shadow-sm transition-all hover:-translate-y-0.5">Wszystko</button>
+                      <button onClick={() => handlePrint('stickers', 1)} className="bg-orange-500 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-orange-600 shadow-sm transition-all hover:-translate-y-0.5">ZM 1</button>
+                      <button onClick={() => handlePrint('stickers', 2)} className="bg-orange-500 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-orange-600 shadow-sm transition-all hover:-translate-y-0.5">ZM 2</button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
