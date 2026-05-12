@@ -4,6 +4,67 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 
+const MONTHS_PL = ['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
+const DAYS_SHORT = ['Pn','Wt','Śr','Cz','Pt','So','Nd'];
+
+function getDaysWindow(offset) {
+  const dayNames = ['Niedz','Pon','Wt','Śr','Czw','Pt','Sob'];
+  const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset + i);
+    const localDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(d);
+    return { date: localDate, name: localDate === todayStr ? 'Dziś' : dayNames[d.getDay()], dayNum: d.getDate() };
+  });
+}
+
+function getMonthGrid(year, month) {
+  const firstDay = new Date(year, month, 1).getDay();
+  const startPad = firstDay === 0 ? 6 : firstDay - 1;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  return { startPad, daysInMonth };
+}
+
+function getDayDiff(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((new Date(y, m - 1, d) - today) / 86400000);
+}
+
+function DatePickerDropdown({ year, month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, onPrevYear, onNextYear }) {
+  const { startPad, daysInMonth } = getMonthGrid(year, month);
+  return (
+    <div className="absolute z-30 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-72">
+      <div className="flex items-center justify-between mb-3">
+        <button type="button" onClick={onPrevMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">‹</button>
+        <span className="font-bold text-slate-800 text-sm">{MONTHS_PL[month]} {year}</span>
+        <button type="button" onClick={onNextMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">›</button>
+      </div>
+      <div className="grid grid-cols-7 mb-1">
+        {DAYS_SHORT.map(d => <div key={d} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7">
+        {Array.from({ length: startPad }, (_, i) => <div key={`p${i}`} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isSel = selectedDate === dateStr;
+          return (
+            <button key={day} type="button" onClick={() => onSelectDate(dateStr)}
+              className={`p-1.5 text-sm rounded-xl font-bold transition-all ${isSel ? 'bg-blue-600 text-white' : 'hover:bg-slate-100 text-slate-700'}`}
+            >{day}</button>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-center gap-3 mt-3 pt-3 border-t border-slate-100">
+        <button type="button" onClick={onPrevYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">‹ {year - 1}</button>
+        <span className="text-sm font-black text-slate-700">{year}</span>
+        <button type="button" onClick={onNextYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">{year + 1} ›</button>
+      </div>
+    </div>
+  );
+}
+
 export default function RestauracjaPanel() {
   const [activeTab, setActiveTab] = useState('menu'); 
   const [printMode, setPrintMode] = useState('report'); // 'report' lub 'stickers'
@@ -14,9 +75,18 @@ export default function RestauracjaPanel() {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Kalendarz
+  // Kalendarz główny
   const [selectedDate, setSelectedDate] = useState('');
-  const [availableDays, setAvailableDays] = useState([]);
+  const [calendarOffset, setCalendarOffset] = useState(0);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(() => new Date().getMonth());
+
+  // Kalendarz kopiowania
+  const [copyCalOffset, setCopyCalOffset] = useState(-6);
+  const [showCopyDatePicker, setShowCopyDatePicker] = useState(false);
+  const [copyPickerYear, setCopyPickerYear] = useState(() => new Date().getFullYear());
+  const [copyPickerMonth, setCopyPickerMonth] = useState(() => new Date().getMonth());
 
   // Dane do produkcji
   const [shift1Summary, setShift1Summary] = useState({});
@@ -54,22 +124,9 @@ export default function RestauracjaPanel() {
 
   // 1. Inicjalizacja przy starcie
   useEffect(() => {
-    const days = [];
-    const dayNames = ['Niedz', 'Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob'];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      // Data w strefie Europe/Warsaw — eliminuje skok dnia o 22:00 UTC.
-      const localDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(d);
-      days.push({
-        date: localDate,
-        name: i === 0 ? 'Dziś' : dayNames[d.getDay()],
-        dayNum: d.getDate(),
-      });
-    }
-    setAvailableDays(days);
-    setSelectedDate(days[0].date);
-    
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
+    setSelectedDate(today);
+
     fetchRestaurantData();
 
     // Zamknięcie podpowiedzi po kliknięciu obok
@@ -385,14 +442,10 @@ export default function RestauracjaPanel() {
 
   async function fetchPastMenu() {
     const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
-    const from = new Date();
-    from.setDate(from.getDate() - 30);
-    const fromStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(from);
     const { data } = await supabase
       .from('menu_items')
       .select('id, name, price, available_date')
       .lt('available_date', today)
-      .gte('available_date', fromStr)
       .order('available_date', { ascending: false });
     if (data) setPastMenuItems(data);
   }
@@ -633,18 +686,55 @@ export default function RestauracjaPanel() {
           {/* PASEK Z KALENDARZEM */}
           {(activeTab === 'menu' || activeTab === 'produkcja') && (
             <div className="glass p-5 md:p-6 rounded-3xl mb-8 border border-slate-200/50">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 ml-1">Wybierz dzień</p>
-              <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
-                {availableDays.map((day) => {
-                  const isSelected = selectedDate === day.date;
-                  return (
-                    <button key={day.date} onClick={() => setSelectedDate(day.date)} className={`flex flex-col items-center justify-center min-w-[76px] py-4 rounded-2xl transition-all duration-300 ${isSelected ? (activeTab === 'menu' ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105' : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-lg shadow-orange-500/30 scale-105') : 'bg-white/60 text-slate-500 border border-slate-200/50 hover:bg-white hover:shadow-md backdrop-blur-sm'}`}>
-                      <span className={`text-[10px] font-bold uppercase mb-1.5 tracking-wider ${isSelected ? 'text-white' : 'text-slate-400'}`}>{day.name}</span>
-                      <span className="text-2xl font-heading font-black leading-none">{day.dayNum}</span>
-                      {allItems.some(item => item.available_date === day.date) && <div className={`w-1.5 h-1.5 rounded-full mt-2 ${isSelected ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-slate-400'}`}></div>}
-                    </button>
-                  );
-                })}
+              <div className="flex justify-between items-center mb-4">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Wybierz dzień</p>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowDatePicker(p => !p)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/60 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all backdrop-blur-sm"
+                  >
+                    📅 Wybierz datę
+                  </button>
+                  {showDatePicker && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={() => setShowDatePicker(false)} />
+                      <DatePickerDropdown
+                        year={pickerYear} month={pickerMonth}
+                        selectedDate={selectedDate}
+                        onSelectDate={(d) => { setSelectedDate(d); setCalendarOffset(getDayDiff(d)); setShowDatePicker(false); }}
+                        onPrevMonth={() => pickerMonth === 0 ? (setPickerYear(y => y - 1), setPickerMonth(11)) : setPickerMonth(m => m - 1)}
+                        onNextMonth={() => pickerMonth === 11 ? (setPickerYear(y => y + 1), setPickerMonth(0)) : setPickerMonth(m => m + 1)}
+                        onPrevYear={() => setPickerYear(y => y - 1)}
+                        onNextYear={() => setPickerYear(y => y + 1)}
+                      />
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCalendarOffset(p => p - 1)}
+                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all backdrop-blur-sm"
+                >‹</button>
+                <div className="flex gap-2 overflow-x-auto flex-1 pb-1 scrollbar-hide" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+                  {getDaysWindow(calendarOffset).map((day) => {
+                    const isSelected = selectedDate === day.date;
+                    return (
+                      <button key={day.date} onClick={() => setSelectedDate(day.date)} className={`flex flex-col items-center justify-center min-w-[68px] py-3 rounded-2xl transition-all duration-300 shrink-0 ${isSelected ? (activeTab === 'menu' ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105' : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-lg shadow-orange-500/30 scale-105') : 'bg-white/60 text-slate-500 border border-slate-200/50 hover:bg-white hover:shadow-md backdrop-blur-sm'}`}>
+                        <span className={`text-[10px] font-bold uppercase mb-1 tracking-wider ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>{day.name}</span>
+                        <span className="text-xl font-heading font-black leading-none">{day.dayNum}</span>
+                        {allItems.some(item => item.available_date === day.date) && <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${isSelected ? 'bg-white' : 'bg-slate-400'}`} />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCalendarOffset(p => p + 1)}
+                  className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all backdrop-blur-sm"
+                >›</button>
               </div>
             </div>
           )}
@@ -686,70 +776,88 @@ export default function RestauracjaPanel() {
                   </button>
 
                   {showCopyPanel && (() => {
-                    const pastDates = [...new Set(pastMenuItems.map(i => i.available_date))];
                     const copySourceItems = pastMenuItems.filter(i => i.available_date === copySourceDate);
                     return (
                       <div className="mt-5">
-                        {pastDates.length === 0 ? (
-                          <p className="text-slate-400 italic text-center py-4 bg-white/40 rounded-2xl border border-dashed border-slate-300">
-                            Brak historii menu z ostatnich 30 dni.
-                          </p>
-                        ) : (
-                          <>
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Wybierz dzień źródłowy:</p>
-                            <div className="flex flex-wrap gap-2 mb-5">
-                              {pastDates.map(date => (
-                                <button
-                                  key={date}
-                                  type="button"
-                                  onClick={() => setCopySourceDate(date)}
-                                  className={`px-3 py-1.5 rounded-xl text-sm font-bold transition-all ${
-                                    copySourceDate === date
-                                      ? 'bg-blue-600 text-white shadow-md'
-                                      : 'bg-white/60 text-slate-600 border border-slate-200 hover:bg-white hover:shadow-sm'
-                                  }`}
-                                >
-                                  {date}
+                        {/* Kalendarz kopiowania */}
+                        <div className="flex items-center gap-2 mb-4">
+                          <button type="button" onClick={() => setCopyCalOffset(p => p - 1)}
+                            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all">‹</button>
+                          <div className="flex gap-1.5 overflow-x-auto flex-1 pb-1 scrollbar-hide" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+                            {getDaysWindow(copyCalOffset).map((day) => {
+                              const isSelected = copySourceDate === day.date;
+                              const hasDishes = pastMenuItems.some(item => item.available_date === day.date);
+                              return (
+                                <button key={day.date} type="button" onClick={() => setCopySourceDate(day.date)}
+                                  className={`flex flex-col items-center justify-center min-w-[60px] py-2.5 rounded-xl transition-all duration-300 shrink-0 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md scale-105' : 'bg-white/60 text-slate-500 border border-slate-200/50 hover:bg-white hover:shadow-sm backdrop-blur-sm'}`}>
+                                  <span className={`text-[9px] font-bold uppercase mb-0.5 tracking-wider ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>{day.name}</span>
+                                  <span className="text-lg font-heading font-black leading-none">{day.dayNum}</span>
+                                  {hasDishes && <div className={`w-1 h-1 rounded-full mt-1 ${isSelected ? 'bg-white' : 'bg-blue-400'}`} />}
                                 </button>
-                              ))}
-                            </div>
-
-                            {copySourceDate && (
+                              );
+                            })}
+                          </div>
+                          <button type="button" onClick={() => setCopyCalOffset(p => p + 1)}
+                            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all">›</button>
+                          <div className="relative shrink-0">
+                            <button type="button" onClick={() => setShowCopyDatePicker(p => !p)}
+                              className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white hover:shadow-sm transition-all text-base backdrop-blur-sm" title="Wybierz datę">📅</button>
+                            {showCopyDatePicker && (
                               <>
-                                <div className="flex justify-between items-center mb-3">
-                                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                    Dania z {copySourceDate}:
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={handleCopyAll}
-                                    disabled={copyingAll}
-                                    className="text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-1.5 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:transform-none"
-                                  >
-                                    {copyingAll ? 'Kopiowanie…' : 'Kopiuj wszystkie'}
-                                  </button>
-                                </div>
-                                <ul className="space-y-2">
-                                  {copySourceItems.map(item => (
-                                    <li key={item.id} className="flex justify-between items-center p-3 bg-white/60 rounded-xl border border-slate-200/50 hover:bg-white transition-all">
-                                      <div>
-                                        <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                                        <p className="text-indigo-600 font-black text-xs">{item.price} zł</p>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCopyDish(item)}
-                                        className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors shadow-sm whitespace-nowrap"
-                                      >
-                                        + Dodaj
+                                <div className="fixed inset-0 z-20" onClick={() => setShowCopyDatePicker(false)} />
+                                <DatePickerDropdown
+                                  year={copyPickerYear} month={copyPickerMonth}
+                                  selectedDate={copySourceDate}
+                                  onSelectDate={(d) => { setCopySourceDate(d); setCopyCalOffset(getDayDiff(d)); setShowCopyDatePicker(false); }}
+                                  onPrevMonth={() => copyPickerMonth === 0 ? (setCopyPickerYear(y => y - 1), setCopyPickerMonth(11)) : setCopyPickerMonth(m => m - 1)}
+                                  onNextMonth={() => copyPickerMonth === 11 ? (setCopyPickerYear(y => y + 1), setCopyPickerMonth(0)) : setCopyPickerMonth(m => m + 1)}
+                                  onPrevYear={() => setCopyPickerYear(y => y - 1)}
+                                  onNextYear={() => setCopyPickerYear(y => y + 1)}
+                                />
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Lista dań z wybranego dnia */}
+                        {copySourceDate && (
+                          <>
+                            <div className="flex justify-between items-center mb-3">
+                              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                Dania z {copySourceDate}:
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleCopyAll}
+                                disabled={copyingAll || copySourceItems.length === 0}
+                                className="text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-1.5 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:transform-none"
+                              >
+                                {copyingAll ? 'Kopiowanie…' : 'Kopiuj wszystkie'}
+                              </button>
+                            </div>
+                            {copySourceItems.length === 0 ? (
+                              <p className="text-slate-400 italic text-center py-3 text-sm bg-white/40 rounded-xl border border-dashed border-slate-300">Brak menu na ten dzień.</p>
+                            ) : (
+                              <ul className="space-y-2">
+                                {copySourceItems.map(item => (
+                                  <li key={item.id} className="flex justify-between items-center p-3 bg-white/60 rounded-xl border border-slate-200/50 hover:bg-white transition-all">
+                                    <div>
+                                      <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                                      <p className="text-indigo-600 font-black text-xs">{item.price} zł</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyDish(item)}
+                                      className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors shadow-sm whitespace-nowrap"
+                                    >
+                                      + Dodaj
                                       </button>
                                     </li>
                                   ))}
                                 </ul>
-                              </>
-                            )}
-                          </>
-                        )}
+                              )}
+                            </>
+                          )}
                       </div>
                     );
                   })()}
