@@ -412,21 +412,23 @@ export default function RestauracjaPanel() {
           </header>
 
           {/* PASEK Z KALENDARZEM */}
-          <div className="glass p-5 md:p-6 rounded-3xl mb-8 border border-slate-200/50">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 ml-1">Wybierz dzień</p>
-            <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
-              {availableDays.map((day) => {
-                const isSelected = selectedDate === day.date;
-                return (
-                  <button key={day.date} onClick={() => setSelectedDate(day.date)} className={`flex flex-col items-center justify-center min-w-[76px] py-4 rounded-2xl transition-all duration-300 ${isSelected ? (activeTab === 'menu' ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105' : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-lg shadow-orange-500/30 scale-105') : 'bg-white/60 text-slate-500 border border-slate-200/50 hover:bg-white hover:shadow-md backdrop-blur-sm'}`}>
-                    <span className={`text-[10px] font-bold uppercase mb-1.5 tracking-wider ${isSelected ? 'text-white' : 'text-slate-400'}`}>{day.name}</span>
-                    <span className="text-2xl font-heading font-black leading-none">{day.dayNum}</span>
-                    {allItems.some(item => item.available_date === day.date) && <div className={`w-1.5 h-1.5 rounded-full mt-2 ${isSelected ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-slate-400'}`}></div>}
-                  </button>
-                );
-              })}
+          {(activeTab === 'menu' || activeTab === 'produkcja') && (
+            <div className="glass p-5 md:p-6 rounded-3xl mb-8 border border-slate-200/50">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 ml-1">Wybierz dzień</p>
+              <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+                {availableDays.map((day) => {
+                  const isSelected = selectedDate === day.date;
+                  return (
+                    <button key={day.date} onClick={() => setSelectedDate(day.date)} className={`flex flex-col items-center justify-center min-w-[76px] py-4 rounded-2xl transition-all duration-300 ${isSelected ? (activeTab === 'menu' ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105' : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-lg shadow-orange-500/30 scale-105') : 'bg-white/60 text-slate-500 border border-slate-200/50 hover:bg-white hover:shadow-md backdrop-blur-sm'}`}>
+                      <span className={`text-[10px] font-bold uppercase mb-1.5 tracking-wider ${isSelected ? 'text-white' : 'text-slate-400'}`}>{day.name}</span>
+                      <span className="text-2xl font-heading font-black leading-none">{day.dayNum}</span>
+                      {allItems.some(item => item.available_date === day.date) && <div className={`w-1.5 h-1.5 rounded-full mt-2 ${isSelected ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-slate-400'}`}></div>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* --- ZAKŁADKA 1: MENU --- */}
           {activeTab === 'menu' && (
