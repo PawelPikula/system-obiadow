@@ -1,85 +1,19 @@
 "use client";
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 
+import { getLocalToday, getDaysWindow, getDayDiff } from '../../lib/date-utils';
+import DatePicker from '../../components/Calendar/DatePicker';
+
 const MONTHS_PL = ['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
 const DAYS_SHORT = ['Pn','Wt','Śr','Cz','Pt','So','Nd'];
 
-function getDaysWindow(offset) {
-  const dayNames = ['Niedz','Pon','Wt','Śr','Czw','Pt','Sob'];
-  const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + offset + i);
-    const localDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(d);
-    return { date: localDate, name: localDate === todayStr ? 'Dziś' : dayNames[d.getDay()], dayNum: d.getDate() };
-  });
-}
-
-function getMonthGrid(year, month) {
-  const firstDay = new Date(year, month, 1).getDay();
-  const startPad = firstDay === 0 ? 6 : firstDay - 1;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  return { startPad, daysInMonth };
-}
-
-function getDayDiff(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  return Math.round((new Date(y, m - 1, d) - today) / 86400000);
-}
-
-function DatePickerDropdown({ year, month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, onPrevYear, onNextYear, pos, onClose }) {
-  const { startPad, daysInMonth } = getMonthGrid(year, month);
-  const containerRef = useRef(null);
-  useEffect(() => {
-    function handleClick() { onClose(); }
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
-  }, [onClose]);
-  if (typeof document === 'undefined' || !pos) return null;
-  return createPortal(
-    <div
-      ref={containerRef}
-      className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-72"
-      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
-      onClick={(e) => e.stopPropagation()}
-    >
-        <div className="flex items-center justify-between mb-3">
-          <button type="button" onClick={onPrevMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">‹</button>
-          <span className="font-bold text-slate-800 text-sm">{MONTHS_PL[month]} {year}</span>
-          <button type="button" onClick={onNextMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">›</button>
-        </div>
-        <div className="grid grid-cols-7 mb-1">
-          {DAYS_SHORT.map(d => <div key={d} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>)}
-        </div>
-        <div className="grid grid-cols-7">
-          {Array.from({ length: startPad }, (_, i) => <div key={`p${i}`} />)}
-          {Array.from({ length: daysInMonth }, (_, i) => {
-            const day = i + 1;
-            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const isSel = selectedDate === dateStr;
-            return (
-              <button key={day} type="button" onClick={() => onSelectDate(dateStr)}
-                className={`p-1.5 text-sm rounded-xl font-bold transition-all ${isSel ? 'bg-blue-600 text-white' : 'hover:bg-slate-100 text-slate-700'}`}
-              >{day}</button>
-            );
-          })}
-        </div>
-        <div className="flex items-center justify-center gap-3 mt-3 pt-3 border-t border-slate-100">
-          <button type="button" onClick={onPrevYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">‹ {year - 1}</button>
-          <span className="text-sm font-black text-slate-700">{year}</span>
-          <button type="button" onClick={onNextYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">{year + 1} ›</button>
-        </div>
-      </div>,
-    document.body
-  );
-}
-
 export default function RestauracjaPanel() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('menu'); 
   const [printMode, setPrintMode] = useState('report'); // 'report' lub 'stickers'
   const [printShift, setPrintShift] = useState('all'); // 'all', 1, lub 2
@@ -112,11 +46,11 @@ export default function RestauracjaPanel() {
   const [activeOrders, setActiveOrders] = useState([]);
   const [cancelledOrders, setCancelledOrders] = useState([]);
   const [deliveredOrders, setDeliveredOrders] = useState([]);
-  const [prodCountdown, setProdCountdown] = useState(60);
+  const [prodCountdown, setProdCountdown] = useState(300);
   const selectedDateRef = useRef('');
   const [statsMonth, setStatsMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const todayStr = getLocalToday();
+    return todayStr.substring(0, 7);
   });
 
   const uniquePrintCompanies = useMemo(() => {
@@ -182,6 +116,7 @@ export default function RestauracjaPanel() {
   const [dishDictionary, setDishDictionary] = useState([]);
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [newMaxQty, setNewMaxQty] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [dishSearchQuery, setDishSearchQuery] = useState('');
@@ -202,18 +137,34 @@ export default function RestauracjaPanel() {
 
   // 1. Inicjalizacja przy starcie
   useEffect(() => {
-    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
+    const today = getLocalToday();
     setSelectedDate(today);
     selectedDateRef.current = today;
 
     fetchRestaurantData();
+
+    // Subskrypcja Realtime
+    const channel = supabase
+      .channel('restaurant_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        fetchProduction(selectedDateRef.current);
+        if (activeTab === 'statystyki') fetchStatistics(statsMonth);
+        if (activeTab === 'faktury') fetchInvoiceData(invoiceMonth);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => {
+        fetchRestaurantData();
+      })
+      .subscribe();
 
     // Zamknięcie podpowiedzi po kliknięciu obok
     function handleClickOutside(e) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setShowSuggestions(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // 2. Odświeżanie produkcji i statystyk
@@ -232,15 +183,15 @@ export default function RestauracjaPanel() {
     if (activeTab === 'faktury') fetchInvoiceData(invoiceMonth);
   }, [activeTab, invoiceMonth]);
 
-  // Auto-odświeżanie produkcji co 60 sekund
+  // Auto-odświeżanie produkcji co 300 sekund (backup)
   useEffect(() => {
     if (activeTab !== 'produkcja') return;
-    setProdCountdown(60);
+    setProdCountdown(300);
     const interval = setInterval(() => {
       setProdCountdown(prev => {
         if (prev <= 1) {
           fetchProduction(selectedDateRef.current);
-          return 60;
+          return 300;
         }
         return prev - 1;
       });
@@ -250,52 +201,87 @@ export default function RestauracjaPanel() {
 
   // Pobieranie menu i opinii
   async function fetchRestaurantData() {
-    const { data: menuData } = await supabase.from('menu_items').select('*');
-    if (menuData) {
-      setAllItems(menuData);
-      const unique = [];
-      const seen = new Set();
-      [...menuData].reverse().forEach(dish => {
-        const norm = dish.name.trim().toLowerCase();
-        if (!seen.has(norm)) { seen.add(norm); unique.push({ name: dish.name.trim(), price: dish.price }); }
-      });
-      setDishDictionary(unique);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError || profile?.role !== 'restaurant') {
+        toast.error('Brak uprawnień restauracji.');
+        router.replace('/');
+        return;
+      }
+
+      const [{ data: menuData, error: menuError }, { data: reviewsData, error: reviewsError }, { data: settingsData, error: settingsError }] = await Promise.all([
+        supabase.from('menu_items').select('*'),
+        supabase.from('order_items')
+          .select(`id, rating, review_text, menu_items ( name ), orders ( profiles ( first_name, last_name ) )`)
+          .not('rating', 'is', null)
+          .order('id', { ascending: false }).limit(20),
+        supabase.from('system_settings').select('*').eq('id', 1).single()
+      ]);
+
+      if (menuError) throw menuError;
+      if (reviewsError) throw reviewsError;
+
+      if (menuData) {
+        setAllItems(menuData);
+        const unique = [];
+        const seen = new Set();
+        [...menuData].reverse().forEach(dish => {
+          const norm = dish.name.trim().toLowerCase();
+          if (!seen.has(norm)) { seen.add(norm); unique.push({ name: dish.name.trim(), price: dish.price }); }
+        });
+        setDishDictionary(unique);
+      }
+
+      setReviews(reviewsData || []);
+      if (settingsData) setSettings(settingsData);
+    } catch (error) {
+      console.error('Błąd pobierania danych restauracji:', error);
+      toast.error('Nie udało się pobrać danych: ' + error.message);
+    } finally {
+      setLoading(false);
     }
-
-    const { data: reviewsData } = await supabase
-      .from('order_items')
-      .select(`id, rating, review_text, menu_items ( name ), orders ( profiles ( first_name, last_name ) )`)
-      .not('rating', 'is', null)
-      .order('id', { ascending: false }).limit(20);
-
-    setReviews(reviewsData || []);
-    
-    const { data: settingsData } = await supabase.from('system_settings').select('*').eq('id', 1).single();
-    if (settingsData) setSettings(settingsData);
-    
-    setLoading(false);
   }
 
   // Pobieranie produkcji na dany dzień
   async function fetchProduction(date) {
-    const targetDate = date || selectedDate;
-    const orderSelect = `
-      id,
-      shift,
-      created_at,
-      profiles ( first_name, last_name, companies ( name ) ),
-      order_items ( quantity, menu_items ( name ) )
-    `;
+    try {
+      const targetDate = date || selectedDate;
+      const orderSelect = `
+        id,
+        shift,
+        created_at,
+        profiles ( first_name, last_name, companies ( name ) ),
+        order_items ( quantity, menu_items ( name ) )
+      `;
 
-    const [{ data }, { data: cancelledData }, { data: deliveredData }] = await Promise.all([
-      supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).in('status', ['approved', 'paid_via_blik']),
-      supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).eq('status', 'cancelled'),
-      supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).eq('status', 'delivered'),
-    ]);
+      const [res, cancelledRes, deliveredRes] = await Promise.all([
+        supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).in('status', ['approved', 'paid_via_blik']),
+        supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).eq('status', 'cancelled'),
+        supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).eq('status', 'delivered'),
+      ]);
 
-    const s1 = {}; const s2 = {};
-    const detailedList = [];
-    const activeList = [];
+      if (res.error) throw res.error;
+      if (cancelledRes.error) throw cancelledRes.error;
+      if (deliveredRes.error) throw deliveredRes.error;
+
+      const data = res.data;
+      const cancelledData = cancelledRes.data;
+      const deliveredData = deliveredRes.data;
+
+      const s1 = {}; const s2 = {};
+      const detailedList = [];
+      const activeList = [];
 
     if (data) {
       data.forEach(order => {
@@ -372,101 +358,113 @@ export default function RestauracjaPanel() {
       deliveredList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
     }
     setDeliveredOrders(deliveredList);
+    } catch (error) {
+      console.error('Błąd pobierania produkcji:', error);
+      toast.error('Nie udało się pobrać danych produkcji: ' + error.message);
+    }
   }
 
   // Pobieranie statystyk
   async function fetchStatistics(yearMonth) {
-    setStatsLoading(true);
+    try {
+      setStatsLoading(true);
 
-    const now = new Date();
-    const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
-    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const isCurrentMonth = yearMonth === currentYM;
+      const todayStr = getLocalToday();
+      const currentYM = todayStr.substring(0, 7);
+      const isCurrentMonth = yearMonth === currentYM;
 
-    const [y, m] = yearMonth.split('-').map(Number);
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const monthStartStr = `${y}-${String(m).padStart(2, '0')}-01`;
-    const monthEndStr = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+      const [y, m] = yearMonth.split('-').map(Number);
+      const daysInMonth = new Date(y, m, 0).getDate();
+      const monthStartStr = `${y}-${String(m).padStart(2, '0')}-01`;
+      const monthEndStr = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
 
-    const { data } = await supabase
-      .from('orders')
-      .select(`
-        delivery_date,
-        order_items ( quantity, menu_items ( name, price ) )
-      `)
-      .gte('delivery_date', monthStartStr)
-      .lte('delivery_date', monthEndStr)
-      .in('status', ['approved', 'paid_via_blik']);
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          delivery_date,
+          order_items ( quantity, menu_items ( name, price ) )
+        `)
+        .gte('delivery_date', monthStartStr)
+        .lte('delivery_date', monthEndStr)
+        .in('status', ['approved', 'paid_via_blik']);
 
-    if (data) {
-      let todayRev = 0, todayCount = 0;
-      let weekRev = 0, weekCount = 0;
-      let monthRev = 0, monthCount = 0;
-      const dishCounts = {};
+      if (error) throw error;
 
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(now.getDate() - 7);
-      const sevenDaysAgoStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(sevenDaysAgo);
+      if (data) {
+        let todayRev = 0, todayCount = 0;
+        let weekRev = 0, weekCount = 0;
+        let monthRev = 0, monthCount = 0;
+        const dishCounts = {};
 
-      data.forEach(order => {
-        const isToday = isCurrentMonth && order.delivery_date === todayStr;
-        const isThisWeek = isCurrentMonth && order.delivery_date >= sevenDaysAgoStr;
+        const [tY, tM, tD] = todayStr.split('-').map(Number);
+        const todayDate = new Date(tY, tM - 1, tD);
+        const sevenDaysAgo = new Date(todayDate);
+        sevenDaysAgo.setDate(todayDate.getDate() - 7);
+        const sevenDaysAgoStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(sevenDaysAgo);
 
-        order.order_items.forEach(item => {
-          if (!item.menu_items) return;
-          const dishName = item.menu_items.name;
-          const price = item.menu_items.price || 0;
-          const qty = item.quantity || 1;
-          const totalLineValue = price * qty;
+        data.forEach(order => {
+          const isToday = isCurrentMonth && order.delivery_date === todayStr;
+          const isThisWeek = isCurrentMonth && order.delivery_date >= sevenDaysAgoStr;
 
-          if (isToday) { todayRev += totalLineValue; todayCount += qty; }
-          if (isThisWeek) { weekRev += totalLineValue; weekCount += qty; }
-          monthRev += totalLineValue;
-          monthCount += qty;
-          dishCounts[dishName] = (dishCounts[dishName] || 0) + qty;
+          order.order_items.forEach(item => {
+            if (!item.menu_items) return;
+            const dishName = item.menu_items.name;
+            const price = item.menu_items.price || 0;
+            const qty = item.quantity || 1;
+            const totalLineValue = price * qty;
+
+            if (isToday) { todayRev += totalLineValue; todayCount += qty; }
+            if (isThisWeek) { weekRev += totalLineValue; weekCount += qty; }
+            monthRev += totalLineValue;
+            monthCount += qty;
+            dishCounts[dishName] = (dishCounts[dishName] || 0) + qty;
+          });
         });
-      });
 
-      const topDishes = Object.entries(dishCounts)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 10);
+        const topDishes = Object.entries(dishCounts)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
 
-      setStatsData({
-        today: { revenue: todayRev, count: todayCount },
-        week: { revenue: weekRev, count: weekCount },
-        month: { revenue: monthRev, count: monthCount },
-        topDishes,
-        isCurrentMonth,
-      });
+        setStatsData({
+          today: { revenue: todayRev, count: todayCount },
+          week: { revenue: weekRev, count: weekCount },
+          month: { revenue: monthRev, count: monthCount },
+          topDishes,
+          isCurrentMonth,
+        });
+      }
+    } catch (error) {
+      console.error('Błąd pobierania statystyk:', error);
+      toast.error('Nie udało się pobrać statystyk: ' + error.message);
+    } finally {
+      setStatsLoading(false);
     }
-    setStatsLoading(false);
   }
 
   async function fetchInvoiceData(yearMonth) {
-    setInvoiceLoading(true);
-    setInvoiceData(null);
-    const [y, m] = yearMonth.split('-').map(Number);
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const monthStart = `${yearMonth}-01`;
-    const monthEnd = `${yearMonth}-${String(daysInMonth).padStart(2, '0')}`;
+    try {
+      setInvoiceLoading(true);
+      setInvoiceData(null);
+      const [y, m] = yearMonth.split('-').map(Number);
+      const daysInMonth = new Date(y, m, 0).getDate();
+      const monthStart = `${yearMonth}-01`;
+      const monthEnd = `${yearMonth}-${String(daysInMonth).padStart(2, '0')}`;
 
-    const [ordersRes, revNumRes, costNumRes] = await Promise.all([
-      supabase
-        .from('orders')
-        .select(`id, total_price, employer_paid, status, delivery_date, order_items(quantity), profiles(companies(id, name))`)
-        .gte('delivery_date', monthStart)
-        .lte('delivery_date', monthEnd)
-        .not('status', 'in', '("cancelled","refunded")'),
-      supabase.rpc('get_or_create_invoice_number', { p_year_month: yearMonth, p_type: 'revenue' }),
-      supabase.rpc('get_or_create_invoice_number', { p_year_month: yearMonth, p_type: 'cost' }),
-    ]);
+      const [ordersRes, revNumRes, costNumRes] = await Promise.all([
+        supabase
+          .from('orders')
+          .select(`id, total_price, employer_paid, status, delivery_date, order_items(quantity), profiles(companies(id, name))`)
+          .gte('delivery_date', monthStart)
+          .lte('delivery_date', monthEnd)
+          .not('status', 'in', '("cancelled","refunded")'),
+        supabase.rpc('get_or_create_invoice_number', { p_year_month: yearMonth, p_type: 'revenue' }),
+        supabase.rpc('get_or_create_invoice_number', { p_year_month: yearMonth, p_type: 'cost' }),
+      ]);
 
-    if (ordersRes.error) {
-      toast.error('Błąd wczytywania faktur: ' + ordersRes.error.message);
-      setInvoiceLoading(false);
-      return;
-    }
+      if (ordersRes.error) throw ordersRes.error;
+      if (revNumRes.error) throw revNumRes.error;
+      if (costNumRes.error) throw costNumRes.error;
 
     const orders = ordersRes.data || [];
     const revNum = revNumRes.data || `FV/${y}/${String(m).padStart(2, '0')}`;
@@ -490,13 +488,18 @@ export default function RestauracjaPanel() {
     const costCompanies = Object.values(byCompany).map(c => ({ ...c, net: c.gross / 1.08, vat: c.gross - c.gross / 1.08 }));
     const costGross = costCompanies.reduce((s, c) => s + c.gross, 0);
 
-    setInvoiceData({
-      yearMonth,
-      orderCount: orders.length,
-      revenue: { gross: revenueGross, net: revenueNet, vat: revenueGross - revenueNet, meals: totalMeals },
-      cost: { gross: costGross, net: costGross / 1.08, vat: costGross - costGross / 1.08, companies: costCompanies },
-    });
-    setInvoiceLoading(false);
+      setInvoiceData({
+        yearMonth,
+        orderCount: orders.length,
+        revenue: { gross: revenueGross, net: revenueNet, vat: revenueGross - revenueNet, meals: totalMeals },
+        cost: { gross: costGross, net: costGross / 1.08, vat: costGross - costGross / 1.08, companies: costCompanies },
+      });
+    } catch (error) {
+      console.error('Błąd pobierania danych faktur:', error);
+      toast.error('Nie udało się pobrać danych faktur: ' + error.message);
+    } finally {
+      setInvoiceLoading(false);
+    }
   }
 
   const canCancel = (shift) => {
@@ -647,13 +650,15 @@ export default function RestauracjaPanel() {
     const { error } = await supabase.from('menu_items').insert([{ 
       name: newName, 
       price: parseFloat(newPrice), 
-      available_date: selectedDate 
+      available_date: selectedDate,
+      max_quantity: parseInt(newMaxQty) || null
     }]);
 
     if (!error) {
       toast.success('Danie dodane do menu.');
       setNewName('');
       setNewPrice('');
+      setNewMaxQty('');
       fetchRestaurantData();
     } else {
       toast.error('Nie udało się dodać dania: ' + error.message);
@@ -948,7 +953,7 @@ export default function RestauracjaPanel() {
                     📅 Wybierz datę
                   </button>
                   {showDatePicker && (
-                    <DatePickerDropdown
+                    <DatePicker
                       year={pickerYear} month={pickerMonth}
                       selectedDate={selectedDate}
                       pos={pickerPos}
@@ -1006,8 +1011,9 @@ export default function RestauracjaPanel() {
                       )}
                     </div>
                     <div className="flex gap-4">
-                      <input type="number" step="0.01" required value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="Cena (zł)" className="w-1/2 p-4 bg-white/60 border border-slate-200/50 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 font-bold transition-all backdrop-blur-sm" />
-                      <button type="submit" className="w-1/2 bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-black rounded-2xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-[0_4px_14px_0_rgba(79,70,229,0.39)] hover:shadow-[0_6px_20px_rgba(79,70,229,0.23)] active:scale-95">DODAJ DO MENU</button>
+                      <input type="number" step="0.01" required value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="Cena (zł)" className="w-1/3 p-4 bg-white/60 border border-slate-200/50 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 font-bold transition-all backdrop-blur-sm" />
+                      <input type="number" value={newMaxQty} onChange={e => setNewMaxQty(e.target.value)} placeholder="Limit (opcj.)" className="w-1/3 p-4 bg-white/60 border border-slate-200/50 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 font-bold transition-all backdrop-blur-sm" />
+                      <button type="submit" className="w-1/3 bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-black rounded-2xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-[0_4px_14px_0_rgba(79,70,229,0.39)] hover:shadow-[0_6px_20px_rgba(79,70,229,0.23)] active:scale-95">DODAJ</button>
                     </div>
                   </form>
                 </div>
@@ -1040,7 +1046,7 @@ export default function RestauracjaPanel() {
                           <div className="relative shrink-0">
                             <button ref={copyDatePickerBtnRef} type="button" onClick={(e) => { e.stopPropagation(); if (!showCopyDatePicker) { const rect = copyDatePickerBtnRef.current.getBoundingClientRect(); const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292)); setCopyPickerPos({ top: rect.bottom + 8, left }); } setShowCopyDatePicker(p => !p); }} className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white hover:shadow-sm transition-all text-base backdrop-blur-sm" title="Wybierz datę">📅</button>
                             {showCopyDatePicker && (
-                              <DatePickerDropdown year={copyPickerYear} month={copyPickerMonth} selectedDate={copySourceDate} pos={copyPickerPos} onClose={() => setShowCopyDatePicker(false)} onSelectDate={(d) => { setCopySourceDate(d); setCopyCalOffset(getDayDiff(d)); setShowCopyDatePicker(false); }} onPrevMonth={() => copyPickerMonth === 0 ? (setCopyPickerYear(y => y - 1), setCopyPickerMonth(11)) : setCopyPickerMonth(m => m - 1)} onNextMonth={() => copyPickerMonth === 11 ? (setCopyPickerYear(y => y + 1), setCopyPickerMonth(0)) : setCopyPickerMonth(m => m + 1)} onPrevYear={() => setCopyPickerYear(y => y - 1)} onNextYear={() => setCopyPickerYear(y => y + 1)} />
+                              <DatePicker year={copyPickerYear} month={copyPickerMonth} selectedDate={copySourceDate} pos={copyPickerPos} onClose={() => setShowCopyDatePicker(false)} onSelectDate={(d) => { setCopySourceDate(d); setCopyCalOffset(getDayDiff(d)); setShowCopyDatePicker(false); }} onPrevMonth={() => copyPickerMonth === 0 ? (setCopyPickerYear(y => y - 1), setCopyPickerMonth(11)) : setCopyPickerMonth(m => m - 1)} onNextMonth={() => copyPickerMonth === 11 ? (setCopyPickerYear(y => y + 1), setCopyPickerMonth(0)) : setCopyPickerMonth(m => m + 1)} onPrevYear={() => setCopyPickerYear(y => y - 1)} onNextYear={() => setCopyPickerYear(y => y + 1)} />
                             )}
                           </div>
                         </div>

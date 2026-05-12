@@ -17,6 +17,11 @@ const outfit = Outfit({
 export const metadata = {
   title: 'Obiady B2B',
   description: 'System zamówień posiłków dla pracowników',
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/icon.png',
+    apple: '/icon.png',
+  },
   appleWebApp: {
     capable: true,
     title: 'Obiady B2B',

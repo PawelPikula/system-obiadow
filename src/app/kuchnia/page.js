@@ -1,34 +1,56 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 
+function getLocalToday() {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
+}
+
 export default function KuchniaPanel() {
+  const router = useRouter();
   const [shift1, setShift1] = useState({});
   const [shift2, setShift2] = useState({});
   const [loading, setLoading] = useState(true);
   const [today, setToday] = useState('');
-  const [countdown, setCountdown] = useState(60);
+  const [countdown, setCountdown] = useState(300);
 
   const fetchData = useCallback(async () => {
-    const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
-    setToday(todayStr);
-    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
 
-    const { data, error } = await supabase
-      .from('order_items')
-      .select(`
-        quantity,
-        menu_items ( name ),
-        orders!inner ( delivery_date, shift, status )
-      `)
-      .eq('orders.delivery_date', todayStr)
-      .in('orders.status', ['approved', 'paid_via_blik', 'delivered']);
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
 
-    if (error) {
-      console.error('kuchnia fetch error', error);
-      setLoading(false);
-      return;
-    }
+      if (profileError || profile?.role !== 'restaurant') {
+        toast.error('Brak uprawnień kuchni.');
+        router.replace('/');
+        return;
+      }
+
+      const todayStr = getLocalToday();
+      setToday(todayStr);
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .from('order_items')
+        .select(`
+          quantity,
+          menu_items ( name ),
+          orders!inner ( delivery_date, shift, status )
+        `)
+        .eq('orders.delivery_date', todayStr)
+        .in('orders.status', ['approved', 'paid_via_blik', 'delivered']);
+
+      if (error) throw error;
 
     const s1 = {};
     const s2 = {};
@@ -44,20 +66,45 @@ export default function KuchniaPanel() {
 
     setShift1(s1);
     setShift2(s2);
-    setCountdown(60);
-    setLoading(false);
-  }, []);
+    setCountdown(300);
+    } catch (error) {
+      console.error('kuchnia fetch error', error);
+      toast.error('Nie udało się pobrać danych: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
 
   useEffect(() => {
     fetchData();
+
+    // Subskrypcja Realtime — odświeżamy dane gdy zmienią się zamówienia
+    const channel = supabase
+      .channel('kuchnia_updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => fetchData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_items' },
+        () => fetchData()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   useEffect(() => {
+    // Polling co 5 minut jako backup
     const id = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           fetchData();
-          return 60;
+          return 300;
         }
         return prev - 1;
       });

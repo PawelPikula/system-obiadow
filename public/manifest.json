@@ -1,0 +1,17 @@
+{
+  "name": "System Obiadow B2B",
+  "short_name": "Obiady",
+  "description": "System zamawiania posiłków dla pracowników.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

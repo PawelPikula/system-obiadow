@@ -3,93 +3,11 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 
+import { getLocalToday, getDaysWindow, getDayDiff } from '../lib/date-utils';
+import DatePicker from './Calendar/DatePicker';
+
 const MONTHS_PL = ['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
 const DAYS_SHORT = ['Pn','Wt','Śr','Cz','Pt','So','Nd'];
-
-function getLocalToday() {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
-}
-
-function getDaysWindow(offset) {
-  const dayNames = ['Niedz', 'Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob'];
-  const todayStr = getLocalToday();
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + offset + i);
-    const localDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(d);
-    return {
-      date: localDate,
-      name: localDate === todayStr ? 'Dziś' : dayNames[d.getDay()],
-      dayNum: d.getDate(),
-    };
-  });
-}
-
-function getMonthGrid(year, month) {
-  const firstDay = new Date(year, month, 1).getDay();
-  const startPad = firstDay === 0 ? 6 : firstDay - 1;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  return { startPad, daysInMonth };
-}
-
-function DatePickerDropdown({ year, month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, onPrevYear, onNextYear, pos, onClose }) {
-  const { startPad, daysInMonth } = getMonthGrid(year, month);
-  const today = getLocalToday();
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    function handleClick() { onClose(); }
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
-  }, [onClose]);
-
-  if (typeof document === 'undefined' || !pos) return null;
-
-  return createPortal(
-    <div
-      ref={containerRef}
-      className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-72"
-      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <button type="button" onClick={onPrevMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">‹</button>
-        <span className="font-bold text-slate-800 text-sm">{MONTHS_PL[month]} {year}</span>
-        <button type="button" onClick={onNextMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">›</button>
-      </div>
-      <div className="grid grid-cols-7 mb-1">
-        {DAYS_SHORT.map(d => <div key={d} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>)}
-      </div>
-      <div className="grid grid-cols-7">
-        {Array.from({ length: startPad }, (_, i) => <div key={`p${i}`} />)}
-        {Array.from({ length: daysInMonth }, (_, i) => {
-          const day = i + 1;
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const isSel = selectedDate === dateStr;
-          const isPast = dateStr < today;
-          return (
-            <button
-              key={day}
-              type="button"
-              onClick={() => { if (!isPast) onSelectDate(dateStr); }}
-              className={`p-1.5 text-sm rounded-xl font-bold transition-all ${
-                isSel ? 'bg-blue-600 text-white' :
-                isPast ? 'text-slate-300 cursor-default' :
-                'hover:bg-slate-100 text-slate-700'
-              }`}
-            >{day}</button>
-          );
-        })}
-      </div>
-      <div className="flex items-center justify-center gap-3 mt-3 pt-3 border-t border-slate-100">
-        <button type="button" onClick={onPrevYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">‹ {year - 1}</button>
-        <span className="text-sm font-black text-slate-700">{year}</span>
-        <button type="button" onClick={onNextYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">{year + 1} ›</button>
-      </div>
-    </div>,
-    document.body
-  );
-}
 
 export default function MenuCart({ userProfile }) {
   const [allItems, setAllItems] = useState([]);
@@ -101,8 +19,8 @@ export default function MenuCart({ userProfile }) {
   const [settings, setSettings] = useState(null);
   // Istniejące zamówienia użytkownika (klucz: "YYYY-MM-DD_shift")
   const [existingOrders, setExistingOrders] = useState({});
-  // Daty, w których dofinansowanie pracodawcy już zostało użyte
   const [subsidyUsedDates, setSubsidyUsedDates] = useState(new Set());
+  const [soldCounts, setSoldCounts] = useState({});
 
   const [selectedDate, setSelectedDate] = useState(() => getLocalToday());
   const [calendarOffset, setCalendarOffset] = useState(0);
@@ -122,13 +40,28 @@ export default function MenuCart({ userProfile }) {
       const to = days[6].date;
 
       const [{ data: menuData }, { data: settingsData }, { data: { session } }, ] = await Promise.all([
-        supabase.from('menu_items').select('id, name, price, available_date').gte('available_date', from).lte('available_date', to),
+        supabase.from('menu_items').select('id, name, price, available_date, max_quantity').gte('available_date', from).lte('available_date', to),
         supabase.from('system_settings').select('*').eq('id', 1).single(),
         supabase.auth.getSession(),
       ]);
 
-      setAllItems(menuData || []);
+      const menuItems = menuData || [];
+      setAllItems(menuItems);
       if (settingsData) setSettings(settingsData);
+
+      if (menuItems.length > 0) {
+        const { data: soldData } = await supabase
+          .from('order_items')
+          .select('menu_item_id, quantity, orders!inner(status)')
+          .in('menu_item_id', menuItems.map(m => m.id))
+          .in('orders.status', ['approved', 'paid_via_blik', 'delivered']);
+
+        const soldMap = {};
+        (soldData || []).forEach(si => {
+          soldMap[si.menu_item_id] = (soldMap[si.menu_item_id] || 0) + si.quantity;
+        });
+        setSoldCounts(soldMap);
+      }
 
       if (session) {
         const { data: ordersData } = await supabase
@@ -241,9 +174,14 @@ export default function MenuCart({ userProfile }) {
   const handleSelectDate = (date) => {
     setSelectedDate(date);
     // Snap calendar window to show the selected week
-    const todayMs = new Date(); todayMs.setHours(0, 0, 0, 0);
+    const todayStr = getLocalToday();
+    const [tY, tM, tD] = todayStr.split('-').map(Number);
+    const todayStart = new Date(tY, tM - 1, tD);
+    
     const [y, m, d] = date.split('-').map(Number);
-    const diff = Math.round((new Date(y, m - 1, d) - todayMs) / 86400000);
+    const selectedStart = new Date(y, m - 1, d);
+    
+    const diff = Math.round((selectedStart - todayStart) / 86400000);
     setCalendarOffset(Math.max(0, Math.floor(diff / 7) * 7));
     setShowDatePicker(false);
   };
@@ -251,7 +189,7 @@ export default function MenuCart({ userProfile }) {
   return (
     <div className="glass text-slate-800 rounded-[2rem] p-6 max-w-md w-full animate-fade-in" style={{ animationDelay: '0.1s' }}>
       {showDatePicker && (
-        <DatePickerDropdown
+        <DatePicker
           year={pickerYear}
           month={pickerMonth}
           selectedDate={selectedDate}
@@ -399,10 +337,23 @@ export default function MenuCart({ userProfile }) {
                 >
                   <div className="flex-1 pr-4">
                     <p className="font-bold text-slate-800 leading-tight mb-1">{item.name}</p>
-                    <p className="text-indigo-600 font-black text-sm">{item.price} zł</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-indigo-600 font-black text-sm">{item.price} zł</p>
+                      {item.max_quantity && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                          (soldCounts[item.id] || 0) >= item.max_quantity 
+                            ? 'bg-red-100 text-red-600' 
+                            : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {(soldCounts[item.id] || 0)} / {item.max_quantity}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-                    {inCart ? (
+                    {item.max_quantity && (soldCounts[item.id] || 0) >= item.max_quantity && !inCart ? (
+                      <span className="px-4 py-2 text-xs font-bold text-red-500 bg-red-50 rounded-xl">Wyprzedane</span>
+                    ) : inCart ? (
                       <>
                         <button
                           onClick={() => removeFromCart(item.id)}
@@ -410,7 +361,13 @@ export default function MenuCart({ userProfile }) {
                         >-</button>
                         <span className="font-bold w-4 text-center text-slate-800">{cart[key]}</span>
                         <button
-                          onClick={() => addToCart(item.id)}
+                          onClick={() => {
+                            if (item.max_quantity && (soldCounts[item.id] || 0) + cart[key] >= item.max_quantity) {
+                              toast.error('Osiągnięto limit dla tego dania.');
+                              return;
+                            }
+                            addToCart(item.id);
+                          }}
                           className="w-8 h-8 flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm font-bold hover:shadow-md transition-all"
                         >+</button>
                       </>

@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
+import AuditTab from './AuditTab';
 
 const ROLE_LABELS = {
   employee: { label: 'Pracownik', color: 'bg-slate-100 text-slate-600' },
@@ -11,6 +13,7 @@ const ROLE_LABELS = {
 };
 
 export default function AdminPanel() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [companies, setCompanies] = useState([]);
@@ -36,13 +39,41 @@ export default function AdminPanel() {
   }, []);
 
   async function fetchAdminData() {
-    const [{ data: usersData }, { data: companiesData }] = await Promise.all([
-      supabase.from('profiles').select('id, first_name, last_name, company_id, role'),
-      supabase.from('companies').select('id, name, payment_model, daily_subsidy'),
-    ]);
-    setUsers(usersData || []);
-    setCompanies(companiesData || []);
-    setLoading(false);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError || profile?.role !== 'admin') {
+        toast.error('Brak uprawnień administratora.');
+        router.replace('/');
+        return;
+      }
+
+      const [{ data: usersData, error: usersError }, { data: companiesData, error: companiesError }] = await Promise.all([
+        supabase.from('profiles').select('id, first_name, last_name, company_id, role'),
+        supabase.from('companies').select('id, name, payment_model, daily_subsidy'),
+      ]);
+
+      if (usersError) throw usersError;
+      if (companiesError) throw companiesError;
+
+      setUsers(usersData || []);
+      setCompanies(companiesData || []);
+    } catch (error) {
+      console.error('Błąd pobierania danych admina:', error);
+      toast.error('Nie udało się pobrać danych: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function assignCompany(userId, newCompanyId) {
@@ -261,6 +292,12 @@ export default function AdminPanel() {
           >
             🏢 Firmy
           </button>
+          <button
+            onClick={() => { setActiveTab('audit'); setSelectedCompanyId(null); }}
+            className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'audit' ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}
+          >
+            📝 Logi audytowe
+          </button>
         </div>
 
         {/* ZAKŁADKA: PRACOWNICY */}
@@ -446,6 +483,12 @@ export default function AdminPanel() {
                 </ul>
               )}
             </div>
+          </div>
+        {/* ZAKŁADKA: LOGI AUDYTOWE */}
+        {activeTab === 'audit' && (
+          <div className="animate-slide-up">
+            <h2 className="text-xl font-bold mb-5 text-slate-700 px-1">Ostatnia aktywność w systemie:</h2>
+            <AuditTab />
           </div>
         )}
       </div>
