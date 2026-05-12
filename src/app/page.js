@@ -81,7 +81,7 @@ export default function Home() {
               href="/historia"
               className="px-4 py-2 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm"
             >
-              Historia
+              Zamówienia
             </Link>
             <button
               onClick={handleSignOut}

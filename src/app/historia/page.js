@@ -34,7 +34,7 @@ export default function HistoriaPage() {
     const { data: ordersData } = await supabase
       .from('orders')
       .select(`
-        id, order_date, delivery_date, total_price, employee_paid, employer_paid, status,
+        id, shift, order_date, delivery_date, total_price, employee_paid, employer_paid, status,
         order_items (
           id, quantity, rating, review_text,
           menu_items ( name )
@@ -60,6 +60,39 @@ export default function HistoriaPage() {
     }
     setLoading(false);
   }
+
+  // Sprawdzanie czy można anulować zamówienie
+  const canCancelOrder = (deliveryDate, shift) => {
+    const now = new Date();
+    const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
+    
+    if (deliveryDate > todayStr) return true;
+    if (deliveryDate < todayStr) return false;
+    
+    // Jeśli to dzisiaj, sprawdzamy godzinę
+    const currentHour = now.getHours() + now.getMinutes() / 60;
+    if (shift === 1 && currentHour < 9) return true;
+    if (shift === 2 && currentHour < 12) return true;
+    
+    return false;
+  };
+
+  // Funkcja anulowania zamówienia
+  const handleCancelOrder = async (orderId) => {
+    if (!confirm('Czy na pewno chcesz anulować to zamówienie? Środki nie wrócą na Twoje konto od razu (jeśli dotyczy), skontaktuj się z administratorem jeśli to był błąd.')) return;
+    
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'cancelled_by_user' })
+      .eq('id', orderId);
+
+    if (error) {
+      toast.error('Nie udało się anulować zamówienia: ' + error.message);
+    } else {
+      toast.success('Zamówienie zostało pomyślnie anulowane.');
+      fetchOrderHistory(); // Odświeżenie danych
+    }
+  };
 
   // Funkcja zapisująca ocenę do bazy
   async function submitReview(itemId) {
@@ -113,17 +146,33 @@ export default function HistoriaPage() {
             {orders.map((order) => {
               // Sprawdzamy czy jedzenie już powinno być dostarczone (data dostawy <= dzisiaj)
               const isDelivered = (order.delivery_date || order.order_date) <= today;
+              const isCancelled = order.status === 'cancelled_by_user' || order.status === 'cancelled_by_restaurant';
+              const isCancelable = !isCancelled && canCancelOrder(order.delivery_date, order.shift);
 
               return (
-                <div key={order.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
-                  <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
+                <div key={order.id} className={`bg-white p-5 rounded-3xl shadow-sm border ${isCancelled ? 'border-red-200 opacity-75' : 'border-slate-200'} transition-all`}>
+                  <div className="flex flex-col md:flex-row justify-between md:items-start mb-4 border-b border-slate-100 pb-3 gap-3">
                     <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded text-white ${order.shift === 1 ? 'bg-orange-500' : 'bg-indigo-500'}`}>
+                          ZM {order.shift}
+                        </span>
+                        {isCancelled && <span className="text-[10px] font-bold px-2 py-0.5 rounded text-white bg-red-500">ANULOWANE</span>}
+                      </div>
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        Dostawa: <span className="text-slate-700">{order.delivery_date || order.order_date}</span>
+                        Dostawa: <span className={isCancelled ? "text-slate-400 line-through" : "text-slate-700"}>{order.delivery_date || order.order_date}</span>
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xl font-black">{order.employee_paid.toFixed(2)} zł</p>
+                    <div className="flex flex-col items-end gap-2">
+                      <p className={`text-xl font-black ${isCancelled ? "text-slate-400 line-through" : ""}`}>{order.employee_paid.toFixed(2)} zł</p>
+                      {isCancelable && (
+                        <button 
+                          onClick={() => handleCancelOrder(order.id)}
+                          className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-3 py-1 rounded-lg hover:bg-red-100 transition-colors shadow-sm"
+                        >
+                          Anuluj Zamówienie
+                        </button>
+                      )}
                     </div>
                   </div>
                   
@@ -136,7 +185,9 @@ export default function HistoriaPage() {
                           </span>
                           
                           {/* Logika oceniania */}
-                          {item.rating ? (
+                          {isCancelled ? (
+                            <span className="text-xs text-red-400 font-semibold italic">Zamówienie anulowane</span>
+                          ) : item.rating ? (
                             // Jeśli oceniono, pokazujemy gwiazdki
                             <div className="flex items-center gap-2 text-yellow-500">
                               <span className="font-black">{item.rating}/5 ⭐</span>
