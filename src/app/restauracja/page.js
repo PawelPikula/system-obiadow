@@ -111,6 +111,13 @@ export default function RestauracjaPanel() {
   const [detailedOrders, setDetailedOrders] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
   const [cancelledOrders, setCancelledOrders] = useState([]);
+  const [deliveredOrders, setDeliveredOrders] = useState([]);
+  const [prodCountdown, setProdCountdown] = useState(60);
+  const selectedDateRef = useRef('');
+  const [statsMonth, setStatsMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   const uniquePrintCompanies = useMemo(() => {
     return [...new Set(detailedOrders.map(o => o.company))].sort();
@@ -157,7 +164,8 @@ export default function RestauracjaPanel() {
     today: { revenue: 0, count: 0 },
     week: { revenue: 0, count: 0 },
     month: { revenue: 0, count: 0 },
-    topDishes: []
+    topDishes: [],
+    isCurrentMonth: true,
   });
   const [statsLoading, setStatsLoading] = useState(false);
 
@@ -187,6 +195,7 @@ export default function RestauracjaPanel() {
   useEffect(() => {
     const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
     setSelectedDate(today);
+    selectedDateRef.current = today;
 
     fetchRestaurantData();
 
@@ -200,13 +209,30 @@ export default function RestauracjaPanel() {
 
   // 2. Odświeżanie produkcji i statystyk
   useEffect(() => {
-    if (selectedDate) fetchProduction();
+    selectedDateRef.current = selectedDate;
+    if (selectedDate) fetchProduction(selectedDate);
   }, [selectedDate]);
 
   useEffect(() => {
     if (activeTab === 'statystyki') {
-      fetchStatistics();
+      fetchStatistics(statsMonth);
     }
+  }, [activeTab, statsMonth]);
+
+  // Auto-odświeżanie produkcji co 60 sekund
+  useEffect(() => {
+    if (activeTab !== 'produkcja') return;
+    setProdCountdown(60);
+    const interval = setInterval(() => {
+      setProdCountdown(prev => {
+        if (prev <= 1) {
+          fetchProduction(selectedDateRef.current);
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
   }, [activeTab]);
 
   // Pobieranie menu i opinii
@@ -238,7 +264,8 @@ export default function RestauracjaPanel() {
   }
 
   // Pobieranie produkcji na dany dzień
-  async function fetchProduction() {
+  async function fetchProduction(date) {
+    const targetDate = date || selectedDate;
     const orderSelect = `
       id,
       shift,
@@ -247,9 +274,10 @@ export default function RestauracjaPanel() {
       order_items ( quantity, menu_items ( name ) )
     `;
 
-    const [{ data }, { data: cancelledData }] = await Promise.all([
-      supabase.from('orders').select(orderSelect).eq('delivery_date', selectedDate).in('status', ['approved', 'paid_via_blik']),
-      supabase.from('orders').select(orderSelect).eq('delivery_date', selectedDate).eq('status', 'cancelled'),
+    const [{ data }, { data: cancelledData }, { data: deliveredData }] = await Promise.all([
+      supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).in('status', ['approved', 'paid_via_blik']),
+      supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).eq('status', 'cancelled'),
+      supabase.from('orders').select(orderSelect).eq('delivery_date', targetDate).eq('status', 'delivered'),
     ]);
 
     const s1 = {}; const s2 = {};
@@ -312,22 +340,41 @@ export default function RestauracjaPanel() {
     activeList.sort((a, b) => a.shift - b.shift || a.id - b.id);
     setActiveOrders(activeList);
     setCancelledOrders(cancelledList);
+
+    const deliveredList = [];
+    if (deliveredData) {
+      deliveredData.forEach(order => {
+        const personName = `${order.profiles?.first_name} ${order.profiles?.last_name}`;
+        const companyName = order.profiles?.companies?.name || 'Indywidualny';
+        const dishesStr = order.order_items.map(item => `${item.quantity}x ${item.menu_items.name}`).join(', ');
+        deliveredList.push({
+          id: order.id,
+          shift: order.shift,
+          person: personName,
+          company: companyName,
+          dishes: dishesStr,
+          createdAt: new Date(order.created_at).toLocaleString('pl-PL'),
+        });
+      });
+      deliveredList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
+    }
+    setDeliveredOrders(deliveredList);
   }
 
   // Pobieranie statystyk
-  async function fetchStatistics() {
+  async function fetchStatistics(yearMonth) {
     setStatsLoading(true);
-    
-    // Ustalanie zakresów dat (dzisiaj, ten tydzień, ten miesiąc)
+
     const now = new Date();
-    // Reset czasu dla dzisiaj
     const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
-    
-    // Początek miesiąca
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthStartStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(firstDayOfMonth);
-    
-    // Pobieramy zamówienia z całego obecnego miesiąca
+    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const isCurrentMonth = yearMonth === currentYM;
+
+    const [y, m] = yearMonth.split('-').map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const monthStartStr = `${y}-${String(m).padStart(2, '0')}-01`;
+    const monthEndStr = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
     const { data } = await supabase
       .from('orders')
       .select(`
@@ -335,6 +382,7 @@ export default function RestauracjaPanel() {
         order_items ( quantity, menu_items ( name, price ) )
       `)
       .gte('delivery_date', monthStartStr)
+      .lte('delivery_date', monthEndStr)
       .in('status', ['approved', 'paid_via_blik']);
 
     if (data) {
@@ -343,53 +391,40 @@ export default function RestauracjaPanel() {
       let monthRev = 0, monthCount = 0;
       const dishCounts = {};
 
-      // Do obliczenia tygodnia - bierzemy ostatnie 7 dni
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(now.getDate() - 7);
       const sevenDaysAgoStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(sevenDaysAgo);
 
       data.forEach(order => {
-        const isToday = order.delivery_date === todayStr;
-        const isThisWeek = order.delivery_date >= sevenDaysAgoStr;
-        // wszystkie są isThisMonth, bo filtrujemy w zapytaniu
+        const isToday = isCurrentMonth && order.delivery_date === todayStr;
+        const isThisWeek = isCurrentMonth && order.delivery_date >= sevenDaysAgoStr;
 
         order.order_items.forEach(item => {
-          if (!item.menu_items) return; // zabezpieczenie
+          if (!item.menu_items) return;
           const dishName = item.menu_items.name;
           const price = item.menu_items.price || 0;
           const qty = item.quantity || 1;
           const totalLineValue = price * qty;
 
-          // Dzisiaj
-          if (isToday) {
-            todayRev += totalLineValue;
-            todayCount += qty;
-          }
-          // Tydzień
-          if (isThisWeek) {
-            weekRev += totalLineValue;
-            weekCount += qty;
-          }
-          // Miesiąc
+          if (isToday) { todayRev += totalLineValue; todayCount += qty; }
+          if (isThisWeek) { weekRev += totalLineValue; weekCount += qty; }
           monthRev += totalLineValue;
           monthCount += qty;
-
-          // Do rankingu zliczamy dla całego miesiąca
           dishCounts[dishName] = (dishCounts[dishName] || 0) + qty;
         });
       });
 
-      // Sortowanie top dań
       const topDishes = Object.entries(dishCounts)
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)
-        .slice(0, 10); // top 10
+        .slice(0, 10);
 
       setStatsData({
         today: { revenue: todayRev, count: todayCount },
         week: { revenue: weekRev, count: weekCount },
         month: { revenue: monthRev, count: monthCount },
-        topDishes
+        topDishes,
+        isCurrentMonth,
       });
     }
     setStatsLoading(false);
@@ -562,6 +597,21 @@ export default function RestauracjaPanel() {
     setTimeout(() => {
       window.print();
     }, 100);
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Zmiana', 'Firma', 'Pracownik', 'Danie'];
+    const rows = activeOrders.map(o => [`ZM ${o.shift}`, o.company, o.person, o.dishes]);
+    const csv = '﻿' + [headers, ...rows]
+      .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `zamowienia_${selectedDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const dailyMenu = allItems.filter(item => item.available_date === selectedDate);
@@ -934,7 +984,23 @@ export default function RestauracjaPanel() {
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               
               <div className="mb-8 glass p-6 rounded-3xl border border-slate-200/50">
-                <h2 className="text-2xl font-heading font-black text-slate-800 mb-5">Raport dnia: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">{selectedDate}</span></h2>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
+                  <h2 className="text-2xl font-heading font-black text-slate-800">Raport dnia: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">{selectedDate}</span></h2>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={handleExportCSV}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-sm rounded-xl hover:bg-emerald-100 transition-all shadow-sm"
+                    >
+                      ⬇ CSV
+                    </button>
+                    <button
+                      onClick={() => { fetchProduction(selectedDate); setProdCountdown(60); }}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-white/60 border border-slate-200 text-slate-600 font-bold text-sm rounded-xl hover:bg-white transition-all shadow-sm"
+                    >
+                      🔄 Odśwież <span className="text-xs text-slate-400 font-normal ml-1">({prodCountdown}s)</span>
+                    </button>
+                  </div>
+                </div>
 
                 <div className="flex flex-col lg:flex-row gap-4">
                   <div className="flex flex-col sm:flex-row gap-4 bg-white/40 p-4 rounded-2xl border border-slate-200/50 flex-1">
@@ -1108,6 +1174,38 @@ export default function RestauracjaPanel() {
                 </div>
               )}
 
+              {/* DOSTARCZONE */}
+              {deliveredOrders.length > 0 && (
+                <div className="glass p-8 rounded-3xl shadow-lg border border-green-200/60 mt-8">
+                  <h3 className="text-xl font-heading font-black text-green-700 mb-6">✓ Dostarczone zamówienia</h3>
+                  <div className="overflow-x-auto rounded-2xl border border-green-100 bg-white/40">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-green-50/80 text-slate-600 text-xs uppercase tracking-wider border-b border-green-100">
+                          <th className="p-5 font-bold">Zmiana</th>
+                          <th className="p-5 font-bold">Zamówienie</th>
+                          <th className="p-5 font-bold">Klient</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {deliveredOrders.map((order, idx) => (
+                          <tr key={idx} className="hover:bg-green-50/40 transition-colors">
+                            <td className="p-5">
+                              <span className={`font-bold px-3 py-1.5 rounded-lg text-xs ${order.shift === 1 ? 'bg-orange-100 text-orange-700' : 'bg-indigo-100 text-indigo-700'}`}>ZM {order.shift}</span>
+                            </td>
+                            <td className="p-5 text-sm font-black text-slate-700">{order.dishes}</td>
+                            <td className="p-5 text-sm font-medium text-slate-500">
+                              <p className="font-bold text-slate-700">{order.person}</p>
+                              <p className="text-xs text-slate-400">{order.company}</p>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
@@ -1189,28 +1287,65 @@ export default function RestauracjaPanel() {
               ) : (
                 <>
                   <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50 mb-8">
-                    <h2 className="text-3xl font-heading font-black text-slate-800 mb-8">Podsumowanie <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-emerald-600">Sprzedaży</span></h2>
-                    
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                      <h2 className="text-3xl font-heading font-black text-slate-800">Podsumowanie <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-emerald-600">Sprzedaży</span></h2>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => {
+                            const [y, m] = statsMonth.split('-').map(Number);
+                            const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+                            setStatsMonth(prev);
+                          }}
+                          className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white font-black text-slate-500 text-lg transition-all shadow-sm"
+                        >‹</button>
+                        <span className="font-bold text-slate-700 text-sm min-w-[120px] text-center">
+                          {MONTHS_PL[parseInt(statsMonth.split('-')[1], 10) - 1]} {statsMonth.split('-')[0]}
+                        </span>
+                        <button
+                          onClick={() => {
+                            const [y, m] = statsMonth.split('-').map(Number);
+                            const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+                            setStatsMonth(next);
+                          }}
+                          className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white font-black text-slate-500 text-lg transition-all shadow-sm"
+                        >›</button>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       {/* Dziś */}
-                      <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-md hover:bg-white transition-all">
+                      <div className={`bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-md hover:bg-white transition-all ${!statsData.isCurrentMonth ? 'opacity-40' : ''}`}>
                         <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-2">Dzisiaj</p>
-                        <p className="text-4xl font-heading font-black text-slate-800 mb-1">{statsData.today.revenue.toFixed(2)} <span className="text-xl text-slate-400">zł</span></p>
-                        <p className="text-green-600 font-bold bg-green-100/80 px-3 py-1 rounded-lg inline-block">{statsData.today.count} sprzedanych porcji</p>
+                        {statsData.isCurrentMonth ? (
+                          <>
+                            <p className="text-4xl font-heading font-black text-slate-800 mb-1">{statsData.today.revenue.toFixed(2)} <span className="text-xl text-slate-400">zł</span></p>
+                            <p className="text-green-600 font-bold bg-green-100/80 px-3 py-1 rounded-lg inline-block">{statsData.today.count} sprzedanych porcji</p>
+                          </>
+                        ) : (
+                          <p className="text-slate-400 italic text-sm mt-2">Niedostępne dla poprzednich miesięcy</p>
+                        )}
                       </div>
 
                       {/* Ten tydzień */}
-                      <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-md hover:bg-white transition-all relative overflow-hidden">
+                      <div className={`bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-md hover:bg-white transition-all relative overflow-hidden ${!statsData.isCurrentMonth ? 'opacity-40' : ''}`}>
                         <div className="absolute -right-4 -top-4 w-24 h-24 bg-green-100 rounded-full blur-2xl opacity-60 pointer-events-none"></div>
                         <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-2 relative z-10">Ostatnie 7 dni</p>
-                        <p className="text-4xl font-heading font-black text-slate-800 mb-1 relative z-10">{statsData.week.revenue.toFixed(2)} <span className="text-xl text-slate-400">zł</span></p>
-                        <p className="text-green-600 font-bold bg-green-100/80 px-3 py-1 rounded-lg inline-block relative z-10">{statsData.week.count} sprzedanych porcji</p>
+                        {statsData.isCurrentMonth ? (
+                          <>
+                            <p className="text-4xl font-heading font-black text-slate-800 mb-1 relative z-10">{statsData.week.revenue.toFixed(2)} <span className="text-xl text-slate-400">zł</span></p>
+                            <p className="text-green-600 font-bold bg-green-100/80 px-3 py-1 rounded-lg inline-block relative z-10">{statsData.week.count} sprzedanych porcji</p>
+                          </>
+                        ) : (
+                          <p className="text-slate-400 italic text-sm mt-2 relative z-10">Niedostępne dla poprzednich miesięcy</p>
+                        )}
                       </div>
 
-                      {/* Ten miesiąc */}
+                      {/* Miesiąc */}
                       <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-6 rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all text-white relative overflow-hidden">
                         <div className="absolute -right-10 -top-10 w-40 h-40 bg-white rounded-full mix-blend-overlay filter blur-2xl opacity-20 pointer-events-none"></div>
-                        <p className="text-sm font-bold text-green-100 uppercase tracking-widest mb-2 relative z-10">Ten miesiąc</p>
+                        <p className="text-sm font-bold text-green-100 uppercase tracking-widest mb-2 relative z-10">
+                          {MONTHS_PL[parseInt(statsMonth.split('-')[1], 10) - 1]} {statsMonth.split('-')[0]}
+                        </p>
                         <p className="text-4xl font-heading font-black mb-1 relative z-10">{statsData.month.revenue.toFixed(2)} <span className="text-xl text-green-200">zł</span></p>
                         <p className="text-white font-bold bg-white/20 px-3 py-1 rounded-lg inline-block relative z-10 backdrop-blur-sm">{statsData.month.count} sprzedanych porcji</p>
                       </div>
@@ -1219,7 +1354,7 @@ export default function RestauracjaPanel() {
 
                   {/* Ranking */}
                   <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50">
-                    <h2 className="text-2xl font-heading font-black text-slate-800 mb-6 flex items-center gap-2"><span>🏆</span> Top 10 Najchętniej Zamawianych Dań <span className="text-sm text-slate-400 font-medium ml-2">(w tym miesiącu)</span></h2>
+                    <h2 className="text-2xl font-heading font-black text-slate-800 mb-6 flex items-center gap-2"><span>🏆</span> Top 10 Najchętniej Zamawianych Dań <span className="text-sm text-slate-400 font-medium ml-2">({MONTHS_PL[parseInt(statsMonth.split('-')[1], 10) - 1]} {statsMonth.split('-')[0]})</span></h2>
                     
                     {statsData.topDishes.length === 0 ? (
                       <div className="p-12 text-center bg-white/40 rounded-2xl border-2 border-dashed border-slate-300">
