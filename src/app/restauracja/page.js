@@ -299,55 +299,97 @@ export default function RestauracjaPanel() {
         {/* ========================================= */}
         {/* WIDOK DO DRUKU 1: RAPORT DLA KUCHNI       */}
         {/* ========================================= */}
+        {/* ========================================= */}
+        {/* WIDOK DO DRUKU 1: RAPORT DLA KUCHNI       */}
+        {/* ========================================= */}
         {printMode === 'report' && (
-          <div className="hidden print:block font-serif text-black">
-            <div className="text-center border-b-4 border-black pb-4 mb-8">
-              <h1 className="text-4xl font-black uppercase tracking-tighter">Zestawienie Produkcyjne Kuchni</h1>
-              <p className="text-xl mt-2 font-bold">Data realizacji: {selectedDate}</p>
+          <div className="hidden print:block font-sans text-slate-900">
+            {/* Nowoczesny Header */}
+            <div className="flex justify-between items-end border-b-2 border-slate-800 pb-6 mb-10">
+              <div>
+                <h1 className="text-4xl font-heading font-black tracking-tight text-slate-900 uppercase">Raport Produkcyjny</h1>
+                <p className="text-lg text-slate-500 mt-1">Podsumowanie zamówień do przygotowania</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Data Realizacji</p>
+                <p className="text-3xl font-heading font-black bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">{selectedDate}</p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-10">
+            <div className="grid grid-cols-2 gap-12">
+              {/* KOLUMNA 1 */}
               <div>
-                <h2 className="text-2xl font-black border-b-2 border-black mb-4 pb-1 uppercase">I ZMIANA</h2>
-                {Object.keys(shift1Summary).length === 0 ? <p className="italic text-slate-500">Brak zamówień</p> : (
-                  <table className="w-full text-left">
-                    <thead className="border-b border-black">
-                      <tr><th className="py-2">Danie</th><th className="py-2 text-right">Ilość</th></tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(shift1Summary).map(([name, qty]) => (
-                        <tr key={name} className="border-b border-slate-200">
-                          <td className="py-3 font-bold text-lg">{name}</td>
-                          <td className="py-3 text-right text-2xl font-black">{qty} szt.</td>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="bg-slate-800 text-white w-10 h-10 rounded-full flex items-center justify-center font-black text-xl">1</div>
+                  <h2 className="text-2xl font-black uppercase tracking-wider">Pierwsza Zmiana</h2>
+                </div>
+                
+                {Object.keys(shift1Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
+                  <div className="rounded-2xl overflow-hidden border border-slate-200">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-100 border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-widest">Danie</th>
+                          <th className="py-3 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Ilość</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {Object.entries(shift1Summary).map(([name, qty]) => (
+                          <tr key={name} className="break-inside-avoid">
+                            <td className="py-4 px-5 font-bold text-lg text-slate-800">{name}</td>
+                            <td className="py-4 px-5 text-right"><span className="text-2xl font-black bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">{qty}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t-2 border-slate-800">
+                        <tr>
+                          <td className="py-4 px-5 font-black uppercase text-sm">Suma porcji:</td>
+                          <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(shift1Summary).reduce((a, b) => a + b, 0)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 )}
               </div>
 
+              {/* KOLUMNA 2 */}
               <div>
-                <h2 className="text-2xl font-black border-b-2 border-black mb-4 pb-1 uppercase">II ZMIANA</h2>
-                {Object.keys(shift2Summary).length === 0 ? <p className="italic text-slate-500">Brak zamówień</p> : (
-                  <table className="w-full text-left">
-                    <thead className="border-b border-black">
-                      <tr><th className="py-2">Danie</th><th className="py-2 text-right">Ilość</th></tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(shift2Summary).map(([name, qty]) => (
-                        <tr key={name} className="border-b border-slate-200">
-                          <td className="py-3 font-bold text-lg">{name}</td>
-                          <td className="py-3 text-right text-2xl font-black">{qty} szt.</td>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="bg-slate-800 text-white w-10 h-10 rounded-full flex items-center justify-center font-black text-xl">2</div>
+                  <h2 className="text-2xl font-black uppercase tracking-wider">Druga Zmiana</h2>
+                </div>
+
+                {Object.keys(shift2Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
+                  <div className="rounded-2xl overflow-hidden border border-slate-200">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-100 border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-widest">Danie</th>
+                          <th className="py-3 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Ilość</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {Object.entries(shift2Summary).map(([name, qty]) => (
+                          <tr key={name} className="break-inside-avoid">
+                            <td className="py-4 px-5 font-bold text-lg text-slate-800">{name}</td>
+                            <td className="py-4 px-5 text-right"><span className="text-2xl font-black bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">{qty}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t-2 border-slate-800">
+                        <tr>
+                          <td className="py-4 px-5 font-black uppercase text-sm">Suma porcji:</td>
+                          <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(shift2Summary).reduce((a, b) => a + b, 0)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 )}
               </div>
             </div>
             
-            <div className="mt-20 pt-4 border-t border-slate-300 text-xs text-center text-slate-400">
-              Dokument wygenerowany automatycznie przez system zamówień B2B.
+            <div className="mt-16 pt-6 border-t border-slate-200 text-center">
+              <p className="text-xs text-slate-400 font-medium">Wygenerowano z Systemu Zamówień B2B • Wszelkie niezgodności należy zgłaszać administratorowi.</p>
             </div>
           </div>
         )}
@@ -356,7 +398,7 @@ export default function RestauracjaPanel() {
         {/* WIDOK DO DRUKU 2: NAKLEJKI 70x37mm        */}
         {/* ========================================= */}
         {printMode === 'stickers' && (
-          <div className="hidden print:block text-black">
+          <div className="hidden print:block text-slate-900">
             <style>{`
               @page { size: A4; margin: 0; }
               .stickers-grid {
@@ -369,23 +411,34 @@ export default function RestauracjaPanel() {
               .sticker {
                 width: 70mm;
                 height: 37mm;
-                padding: 3mm;
+                padding: 4mm;
                 box-sizing: border-box;
-                border: 1px dashed #ccc; /* Pomaga przy cięciu jeśli papier nie jest nacięty */
+                border: 1px dashed #e2e8f0; /* Bardzo delikatna ramka pomocnicza */
                 overflow: hidden;
                 display: flex;
                 flex-direction: column;
-                justify-content: center;
-                text-align: center;
+                justify-content: space-between;
               }
             `}</style>
             <div className="stickers-grid">
               {detailedOrders.map((order, idx) => (
                 <div key={idx} className="sticker font-sans">
-                  <p style={{ fontSize: '11pt', fontWeight: 'bold', margin: 0, lineHeight: 1 }}>{order.person}</p>
-                  <p style={{ fontSize: '8pt', color: '#555', margin: '2px 0 4px 0', borderBottom: '1px solid #eee', paddingBottom: '2px' }}>{order.company}</p>
-                  <p style={{ fontSize: '12pt', fontWeight: '900', margin: '2px 0', lineHeight: 1.1 }}>{order.dish}</p>
-                  <p style={{ fontSize: '9pt', fontWeight: 'bold', margin: '4px 0 0 0' }}>ZM {order.shift} • {selectedDate}</p>
+                  {/* Górna sekcja - Odbiorca */}
+                  <div className="text-center mb-1">
+                    <p className="text-[12pt] font-black leading-tight truncate">{order.person}</p>
+                    <p className="text-[8pt] text-slate-500 font-bold truncate tracking-wide uppercase border-b border-slate-200 pb-1 mx-2">{order.company}</p>
+                  </div>
+                  
+                  {/* Środkowa sekcja - Danie */}
+                  <div className="flex-grow flex items-center justify-center">
+                    <p className="text-[14pt] font-heading font-black leading-none text-center px-1 break-words">{order.dish}</p>
+                  </div>
+                  
+                  {/* Dolna sekcja - Metadane */}
+                  <div className="flex justify-between items-end mt-1 px-1">
+                    <span className="text-[8pt] font-bold text-slate-400">{selectedDate}</span>
+                    <span className="text-[10pt] font-black bg-slate-800 text-white px-2 py-0.5 rounded-md leading-none">ZM {order.shift}</span>
+                  </div>
                 </div>
               ))}
             </div>
