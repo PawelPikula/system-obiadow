@@ -105,7 +105,6 @@ export default function RestauracjaPanel() {
   // Dane do produkcji
   const [shift1Summary, setShift1Summary] = useState({});
   const [shift2Summary, setShift2Summary] = useState({});
-  const [printShift, setPrintShift] = useState('all');
   const [printFilterCompany, setPrintFilterCompany] = useState('all');
   const [printFilterCanteen, setPrintFilterCanteen] = useState('all');
 
