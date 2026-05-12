@@ -101,6 +101,8 @@ export default function MenuCart({ userProfile }) {
   const [settings, setSettings] = useState(null);
   // Istniejące zamówienia użytkownika (klucz: "YYYY-MM-DD_shift")
   const [existingOrders, setExistingOrders] = useState({});
+  // Daty, w których dofinansowanie pracodawcy już zostało użyte
+  const [subsidyUsedDates, setSubsidyUsedDates] = useState(new Set());
 
   const [selectedDate, setSelectedDate] = useState(() => getLocalToday());
   const [calendarOffset, setCalendarOffset] = useState(0);
@@ -131,17 +133,20 @@ export default function MenuCart({ userProfile }) {
       if (session) {
         const { data: ordersData } = await supabase
           .from('orders')
-          .select('delivery_date, shift')
+          .select('delivery_date, shift, employer_paid, status')
           .eq('profile_id', session.user.id)
           .gte('delivery_date', from)
           .lte('delivery_date', to)
-          .not('status', 'eq', 'cancelled');
+          .not('status', 'in', '("cancelled","refunded")');
 
         const map = {};
+        const usedDates = new Set();
         (ordersData || []).forEach(o => {
           map[`${o.delivery_date}_${o.shift}`] = true;
+          if (o.employer_paid > 0) usedDates.add(o.delivery_date);
         });
         setExistingOrders(map);
+        setSubsidyUsedDates(usedDates);
       }
     }
     fetchMenu();
@@ -173,8 +178,12 @@ export default function MenuCart({ userProfile }) {
     (sum, item) => sum + item.price * (cart[String(item.id)] || 0),
     0
   );
-  const subsidy = userProfile?.companies?.daily_subsidy || 0;
-  const toPay = Math.max(totalAmount - subsidy, 0);
+  const rawSubsidy = userProfile?.companies?.daily_subsidy || 0;
+  const [selY, selM, selD] = selectedDate.split('-').map(Number);
+  const isWeekend = [0, 6].includes(new Date(selY, selM - 1, selD).getDay());
+  const subsidyAlreadyUsed = subsidyUsedDates.has(selectedDate);
+  const effectiveSubsidy = (!isWeekend && !subsidyAlreadyUsed) ? rawSubsidy : 0;
+  const toPay = Math.max(totalAmount - effectiveSubsidy, 0);
 
   const submitOrder = async () => {
     setIsSubmitting(true);
@@ -196,8 +205,10 @@ export default function MenuCart({ userProfile }) {
       setCart({});
       setOrderSuccess(created || { status: 'approved' });
       setTimeout(() => setOrderSuccess(null), 6000);
-      // Oznacz jako zamówione
       setExistingOrders(prev => ({ ...prev, [`${selectedDate}_${selectedShift}`]: true }));
+      if (created?.employer_paid > 0) {
+        setSubsidyUsedDates(prev => new Set([...prev, selectedDate]));
+      }
     } catch (e) {
       setSubmitError(e.message || 'Nie udało się złożyć zamówienia.');
     } finally {
@@ -449,6 +460,16 @@ export default function MenuCart({ userProfile }) {
               <p className="text-4xl font-heading font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-600">
                 {toPay.toFixed(2)} <span className="text-2xl">zł</span>
               </p>
+              {rawSubsidy > 0 && effectiveSubsidy > 0 && (
+                <p className="text-xs text-green-700 font-semibold mt-1">
+                  Dofinansowanie pracodawcy: -{effectiveSubsidy.toFixed(2)} zł
+                </p>
+              )}
+              {rawSubsidy > 0 && effectiveSubsidy === 0 && (
+                <p className="text-xs text-slate-400 font-semibold mt-1">
+                  {isWeekend ? 'Weekend – brak dofinansowania' : 'Dofinansowanie już wykorzystane dziś'}
+                </p>
+              )}
             </div>
             <button
               onClick={submitOrder}
