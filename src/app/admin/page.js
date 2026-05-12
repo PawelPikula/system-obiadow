@@ -24,6 +24,13 @@ export default function AdminPanel() {
   const [newSubsidy, setNewSubsidy] = useState('');
   const [addingCompany, setAddingCompany] = useState(false);
 
+  // Edycja firmy
+  const [editingCompanyId, setEditingCompanyId] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editPaymentModel, setEditPaymentModel] = useState('salary_deduction');
+  const [editSubsidy, setEditSubsidy] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
   useEffect(() => {
     fetchAdminData();
   }, []);
@@ -85,6 +92,38 @@ export default function AdminPanel() {
       setNewSubsidy('');
     }
     setAddingCompany(false);
+  }
+
+  function startEdit(company) {
+    setEditingCompanyId(company.id);
+    setEditName(company.name);
+    setEditPaymentModel(company.payment_model || 'salary_deduction');
+    setEditSubsidy(String(company.daily_subsidy || ''));
+  }
+
+  async function saveCompanyEdit(e) {
+    e.preventDefault();
+    setSavingEdit(true);
+    const { error } = await supabase
+      .from('companies')
+      .update({
+        name: editName.trim(),
+        payment_model: editPaymentModel,
+        daily_subsidy: parseFloat(editSubsidy) || 0,
+      })
+      .eq('id', editingCompanyId);
+    if (error) {
+      toast.error('Nie udało się zapisać: ' + error.message);
+    } else {
+      toast.success('Firma zaktualizowana.');
+      setCompanies(companies.map(c =>
+        c.id === editingCompanyId
+          ? { ...c, name: editName.trim(), payment_model: editPaymentModel, daily_subsidy: parseFloat(editSubsidy) || 0 }
+          : c
+      ));
+      setEditingCompanyId(null);
+    }
+    setSavingEdit(false);
   }
 
   async function deleteCompany(companyId, companyName) {
@@ -334,23 +373,73 @@ export default function AdminPanel() {
                 <ul className="divide-y divide-slate-200/50">
                   {companies.map((company) => {
                     const employeeCount = users.filter(u => u.company_id === company.id).length;
+                    const isEditing = editingCompanyId === company.id;
+                    const paymentLabel = { salary_deduction: 'Potrącenie z wypłaty', blik: 'BLIK', prepaid: 'Przedpłata' };
                     return (
-                      <li key={company.id} className="px-6 py-5 grid grid-cols-4 gap-4 items-center hover:bg-white/60 transition-colors">
-                        <div className="col-span-2">
-                          <p className="font-bold text-slate-800">{company.name}</p>
-                          <p className="text-xs text-slate-400 font-medium mt-0.5">
-                            {company.payment_model === 'salary_deduction' ? 'Potrącenie z wypłaty' : company.payment_model === 'blik' ? 'BLIK' : 'Przedpłata'} · {employeeCount} prac.
-                          </p>
-                        </div>
-                        <span className="text-sm font-black text-green-600">
-                          {(company.daily_subsidy || 0).toFixed(2)} zł
-                        </span>
-                        <button
-                          onClick={() => deleteCompany(company.id, company.name)}
-                          className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors w-fit"
-                        >
-                          Usuń
-                        </button>
+                      <li key={company.id} className="px-6 py-4 hover:bg-white/60 transition-colors">
+                        {isEditing ? (
+                          <form onSubmit={saveCompanyEdit} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                            <input
+                              value={editName}
+                              onChange={e => setEditName(e.target.value)}
+                              required
+                              className="p-2.5 rounded-xl border border-blue-300 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm"
+                              placeholder="Nazwa firmy"
+                            />
+                            <div className="flex gap-2">
+                              <select
+                                value={editPaymentModel}
+                                onChange={e => setEditPaymentModel(e.target.value)}
+                                className="flex-1 p-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm"
+                              >
+                                <option value="salary_deduction">Potrącenie</option>
+                                <option value="blik">BLIK</option>
+                                <option value="prepaid">Przedpłata</option>
+                              </select>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={editSubsidy}
+                                onChange={e => setEditSubsidy(e.target.value)}
+                                className="w-24 p-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm"
+                                placeholder="Dotacja"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button type="submit" disabled={savingEdit} className="flex-1 bg-blue-600 text-white text-sm font-bold px-3 py-2.5 rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50">
+                                {savingEdit ? '…' : 'Zapisz'}
+                              </button>
+                              <button type="button" onClick={() => setEditingCompanyId(null)} className="flex-1 bg-slate-100 text-slate-600 text-sm font-bold px-3 py-2.5 rounded-xl hover:bg-slate-200 transition-all">
+                                Anuluj
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-4 items-center">
+                            <div className="col-span-2">
+                              <p className="font-bold text-slate-800">{company.name}</p>
+                              <p className="text-xs text-slate-400 font-medium mt-0.5">
+                                {paymentLabel[company.payment_model] || company.payment_model} · {employeeCount} prac.
+                              </p>
+                            </div>
+                            <span className="text-sm font-black text-green-600">
+                              {(company.daily_subsidy || 0).toFixed(2)} zł
+                            </span>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => startEdit(company)}
+                                className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors"
+                              >
+                                Edytuj
+                              </button>
+                              <button
+                                onClick={() => deleteCompany(company.id, company.name)}
+                                className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors"
+                              >
+                                Usuń
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </li>
                     );
                   })}

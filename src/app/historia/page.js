@@ -9,13 +9,18 @@ export default function HistoriaPage() {
   const router = useRouter();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ totalEmployeePaid: 0, count: 0 });
   const [settings, setSettings] = useState(null);
 
   // Stany do obsługi formularza opinii
   const [reviewingItemId, setReviewingItemId] = useState(null);
   const [tempRating, setTempRating] = useState(5);
   const [tempReview, setTempReview] = useState('');
+
+  // Filtr miesiąca — domyślnie bieżący
+  const [filterMonth, setFilterMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   useEffect(() => {
     fetchOrderHistory();
@@ -46,18 +51,6 @@ export default function HistoriaPage() {
 
     if (ordersData) {
       setOrders(ordersData);
-      
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      
-      const monthlyTotal = ordersData
-        .filter(o => {
-          const d = new Date(o.delivery_date || o.order_date);
-          return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-        })
-        .reduce((sum, o) => sum + o.employee_paid, 0);
-
-      setStats({ totalEmployeePaid: monthlyTotal, count: ordersData.length });
     }
     
     const { data: settingsData } = await supabase.from('system_settings').select('*').eq('id', 1).single();
@@ -141,6 +134,26 @@ export default function HistoriaPage() {
   // Data w strefie Europe/Warsaw (a nie UTC) — żeby po 22:00 nie pokazywało jutra.
   const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
 
+  // Unikalne miesiące z historii (YYYY-MM), posortowane malejąco
+  const availableMonths = [...new Set(
+    orders.map(o => (o.delivery_date || o.order_date).substring(0, 7))
+  )].sort((a, b) => b.localeCompare(a));
+
+  const filteredOrders = orders.filter(o =>
+    (o.delivery_date || o.order_date).startsWith(filterMonth)
+  );
+
+  const filteredTotal = filteredOrders
+    .filter(o => o.status !== 'cancelled')
+    .reduce((sum, o) => sum + o.employee_paid, 0);
+
+  const MONTHS_PL = ['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec',
+    'Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
+  const monthLabel = (ym) => {
+    const [y, m] = ym.split('-');
+    return `${MONTHS_PL[parseInt(m, 10) - 1]} ${y}`;
+  };
+
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900">
       <div className="max-w-2xl mx-auto">
@@ -150,20 +163,39 @@ export default function HistoriaPage() {
         </div>
 
         {/* Karta Podsumowania */}
-        <div className="bg-blue-600 rounded-3xl p-6 text-white shadow-lg mb-8">
-          <p className="text-blue-100 text-sm uppercase font-bold tracking-wider">Wydatki w tym miesiącu:</p>
-          <h2 className="text-4xl font-black mt-1">{stats.totalEmployeePaid.toFixed(2)} zł</h2>
+        <div className="bg-blue-600 rounded-3xl p-6 text-white shadow-lg mb-4">
+          <p className="text-blue-100 text-sm uppercase font-bold tracking-wider">Wydatki — {monthLabel(filterMonth)}:</p>
+          <h2 className="text-4xl font-black mt-1">{filteredTotal.toFixed(2)} zł</h2>
         </div>
+
+        {/* Selektor miesiąca */}
+        {availableMonths.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-6" style={{ scrollbarWidth: 'none' }}>
+            {availableMonths.map(ym => (
+              <button
+                key={ym}
+                onClick={() => setFilterMonth(ym)}
+                className={`shrink-0 px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+                  filterMonth === ym
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {monthLabel(ym)}
+              </button>
+            ))}
+          </div>
+        )}
 
         <h3 className="text-lg font-bold mb-4 text-slate-700">Historia i oceny:</h3>
 
-        {orders.length === 0 ? (
+        {filteredOrders.length === 0 ? (
           <div className="bg-white p-12 rounded-3xl text-center shadow-sm border border-slate-200">
-            <p className="text-slate-400 font-medium">Brak zamówień.</p>
+            <p className="text-slate-400 font-medium">Brak zamówień w tym miesiącu.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {orders.map((order) => {
+            {filteredOrders.map((order) => {
               // Sprawdzamy czy jedzenie już powinno być dostarczone (data dostawy <= dzisiaj)
               const isDelivered = (order.delivery_date || order.order_date) <= today;
               const isCancelled = order.status === 'cancelled';

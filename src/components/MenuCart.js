@@ -99,6 +99,8 @@ export default function MenuCart({ userProfile }) {
   const [orderSuccess, setOrderSuccess] = useState(null);
   const [submitError, setSubmitError] = useState('');
   const [settings, setSettings] = useState(null);
+  // Istniejące zamówienia użytkownika (klucz: "YYYY-MM-DD_shift")
+  const [existingOrders, setExistingOrders] = useState({});
 
   const [selectedDate, setSelectedDate] = useState(() => getLocalToday());
   const [calendarOffset, setCalendarOffset] = useState(0);
@@ -110,20 +112,37 @@ export default function MenuCart({ userProfile }) {
 
   const availableDays = useMemo(() => getDaysWindow(calendarOffset), [calendarOffset]);
 
-  // Fetch menu whenever the 7-day window changes
+  // Fetch menu i istniejące zamówienia gdy okno kalendarza się zmienia
   useEffect(() => {
     async function fetchMenu() {
       const days = getDaysWindow(calendarOffset);
-      const [{ data }, { data: settingsData }] = await Promise.all([
-        supabase
-          .from('menu_items')
-          .select('id, name, price, available_date')
-          .gte('available_date', days[0].date)
-          .lte('available_date', days[6].date),
+      const from = days[0].date;
+      const to = days[6].date;
+
+      const [{ data: menuData }, { data: settingsData }, { data: { session } }, ] = await Promise.all([
+        supabase.from('menu_items').select('id, name, price, available_date').gte('available_date', from).lte('available_date', to),
         supabase.from('system_settings').select('*').eq('id', 1).single(),
+        supabase.auth.getSession(),
       ]);
-      setAllItems(data || []);
+
+      setAllItems(menuData || []);
       if (settingsData) setSettings(settingsData);
+
+      if (session) {
+        const { data: ordersData } = await supabase
+          .from('orders')
+          .select('delivery_date, shift')
+          .eq('profile_id', session.user.id)
+          .gte('delivery_date', from)
+          .lte('delivery_date', to)
+          .not('status', 'eq', 'cancelled');
+
+        const map = {};
+        (ordersData || []).forEach(o => {
+          map[`${o.delivery_date}_${o.shift}`] = true;
+        });
+        setExistingOrders(map);
+      }
     }
     fetchMenu();
   }, [calendarOffset]);
@@ -177,6 +196,8 @@ export default function MenuCart({ userProfile }) {
       setCart({});
       setOrderSuccess(created || { status: 'approved' });
       setTimeout(() => setOrderSuccess(null), 6000);
+      // Oznacz jako zamówione
+      setExistingOrders(prev => ({ ...prev, [`${selectedDate}_${selectedShift}`]: true }));
     } catch (e) {
       setSubmitError(e.message || 'Nie udało się złożyć zamówienia.');
     } finally {
@@ -252,16 +273,20 @@ export default function MenuCart({ userProfile }) {
           >
             {availableDays.map((day) => {
               const isSelected = selectedDate === day.date;
+              const hasOrder = existingOrders[`${day.date}_1`] || existingOrders[`${day.date}_2`];
               return (
                 <button
                   key={day.date}
                   onClick={() => setSelectedDate(day.date)}
-                  className={`flex flex-col items-center justify-center min-w-[60px] py-3 rounded-2xl transition-all duration-300 ${
+                  className={`relative flex flex-col items-center justify-center min-w-[60px] py-3 rounded-2xl transition-all duration-300 ${
                     isSelected
                       ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105'
                       : 'bg-white/60 text-slate-500 hover:bg-white hover:shadow-md border border-slate-200/50 backdrop-blur-sm'
                   }`}
                 >
+                  {hasOrder && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white shadow-sm" title="Masz zamówienie" />
+                  )}
                   <span className={`text-[10px] font-bold uppercase mb-1 tracking-wider ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>
                     {day.name}
                   </span>
@@ -300,20 +325,31 @@ export default function MenuCart({ userProfile }) {
           Na którą zmianę?
         </label>
         <div className="flex gap-3 p-1.5 bg-slate-200/50 rounded-2xl backdrop-blur-sm">
-          {[1, 2].map((shift) => (
-            <button
-              key={shift}
-              onClick={() => setSelectedShift(shift)}
-              className={`flex-1 py-3 rounded-xl font-bold transition-all duration-300 text-sm ${
-                selectedShift === shift
-                  ? 'bg-white text-blue-600 shadow-md'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
-              }`}
-            >
-              {shift} Zmiana
-            </button>
-          ))}
+          {[1, 2].map((shift) => {
+            const alreadyOrdered = existingOrders[`${selectedDate}_${shift}`];
+            return (
+              <button
+                key={shift}
+                onClick={() => setSelectedShift(shift)}
+                className={`relative flex-1 py-3 rounded-xl font-bold transition-all duration-300 text-sm ${
+                  selectedShift === shift
+                    ? 'bg-white text-blue-600 shadow-md'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                }`}
+              >
+                {alreadyOrdered && (
+                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-200" />
+                )}
+                {shift} Zmiana
+              </button>
+            );
+          })}
         </div>
+        {existingOrders[`${selectedDate}_${selectedShift}`] && (
+          <p className="mt-2 text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-2 rounded-xl">
+            ✓ Masz już zamówienie na ten dzień i zmianę. Możesz złożyć kolejne.
+          </p>
+        )}
       </div>
 
       <h2 className="text-xl font-heading font-black mb-5 flex items-center gap-2 text-slate-800 animate-slide-up" style={{ animationDelay: '0.3s' }}>

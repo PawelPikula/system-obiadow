@@ -443,18 +443,23 @@ export default function RestauracjaPanel() {
 
   const handleCancelOrder = async (orderId) => {
     if (!confirm('Czy na pewno chcesz anulować to zamówienie? Nie można tego cofnąć.')) return;
-    
-    const { error } = await supabase
-      .from('orders')
-      .update({ status: 'cancelled' })
-      .eq('id', orderId);
-      
+    const { error } = await supabase.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
     if (error) {
       toast.error('Błąd podczas anulowania: ' + error.message);
     } else {
-      toast.success('Zamówienie zostało pomyślnie anulowane.');
+      toast.success('Zamówienie anulowane.');
       fetchProduction();
       if (activeTab === 'statystyki') fetchStatistics();
+    }
+  };
+
+  const handleMarkDelivered = async (orderId) => {
+    const { error } = await supabase.from('orders').update({ status: 'delivered' }).eq('id', orderId);
+    if (error) {
+      toast.error('Błąd: ' + error.message);
+    } else {
+      toast.success('Zamówienie oznaczone jako dostarczone.');
+      fetchProduction();
     }
   };
 
@@ -1045,17 +1050,30 @@ export default function RestauracjaPanel() {
                     {activeOrders.map(order => (
                       <div key={order.id} className="bg-white/60 p-5 rounded-2xl border border-slate-200/50 shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4 hover:bg-white hover:shadow-md transition-all">
                         <div>
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">ID: {order.id}</span>
+                          <div className="flex items-center gap-3 mb-1 flex-wrap">
                             <span className={`text-xs font-bold px-2 py-1 rounded-md ${order.shift === 1 ? 'bg-orange-100 text-orange-700' : 'bg-indigo-100 text-indigo-700'}`}>ZM {order.shift}</span>
                             <span className="font-bold text-slate-800">{order.person}</span>
+                            <span className="text-xs text-slate-400">{order.company}</span>
                           </div>
                           <p className="font-black text-slate-700">{order.dishes}</p>
-                          <p className="text-[10px] text-slate-400 mt-1">{order.company} {order.canteen && <span>- {order.canteen}</span>}</p>
+                          <p className="text-[10px] text-slate-400 mt-1">{order.createdAt}</p>
                         </div>
-                        {canCancel(order.shift) ? (
-                          <button onClick={() => handleCancelOrder(order.id)} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-xl font-bold text-sm hover:bg-red-50 active:scale-95">Anuluj</button>
-                        ) : <span className="text-xs font-bold text-slate-400">Czas minął</span>}
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => handleMarkDelivered(order.id)}
+                            className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-xl font-bold text-sm hover:bg-green-100 active:scale-95 transition-all"
+                          >
+                            ✓ Dostarczone
+                          </button>
+                          {canCancel(order.shift) && (
+                            <button
+                              onClick={() => handleCancelOrder(order.id)}
+                              className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-xl font-bold text-sm hover:bg-red-50 active:scale-95 transition-all"
+                            >
+                              Anuluj
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1080,7 +1098,7 @@ export default function RestauracjaPanel() {
                             <td className="p-5 text-sm font-black text-slate-700 line-through decoration-red-400">{order.dishes}</td>
                             <td className="p-5 text-sm font-medium text-slate-500">
                               <p className="font-bold text-slate-700">{order.person}</p>
-                              <p className="text-xs text-slate-400">{order.company} {order.canteen && `- ${order.canteen}`}</p>
+                              <p className="text-xs text-slate-400">{order.company}</p>
                             </td>
                           </tr>
                         ))}
