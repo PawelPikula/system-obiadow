@@ -1,71 +1,142 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 
-export default function MenuCart({ userProfile, userId }) {
+const MONTHS_PL = ['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
+const DAYS_SHORT = ['Pn','Wt','Śr','Cz','Pt','So','Nd'];
+
+function getLocalToday() {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
+}
+
+function getDaysWindow(offset) {
+  const dayNames = ['Niedz', 'Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob'];
+  const todayStr = getLocalToday();
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset + i);
+    const localDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(d);
+    return {
+      date: localDate,
+      name: localDate === todayStr ? 'Dziś' : dayNames[d.getDay()],
+      dayNum: d.getDate(),
+    };
+  });
+}
+
+function getMonthGrid(year, month) {
+  const firstDay = new Date(year, month, 1).getDay();
+  const startPad = firstDay === 0 ? 6 : firstDay - 1;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  return { startPad, daysInMonth };
+}
+
+function DatePickerDropdown({ year, month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, onPrevYear, onNextYear, pos, onClose }) {
+  const { startPad, daysInMonth } = getMonthGrid(year, month);
+  const today = getLocalToday();
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    function handleClick() { onClose(); }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [onClose]);
+
+  if (typeof document === 'undefined' || !pos) return null;
+
+  return createPortal(
+    <div
+      ref={containerRef}
+      className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-72"
+      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <button type="button" onClick={onPrevMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">‹</button>
+        <span className="font-bold text-slate-800 text-sm">{MONTHS_PL[month]} {year}</span>
+        <button type="button" onClick={onNextMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors font-black text-slate-500 text-lg">›</button>
+      </div>
+      <div className="grid grid-cols-7 mb-1">
+        {DAYS_SHORT.map(d => <div key={d} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7">
+        {Array.from({ length: startPad }, (_, i) => <div key={`p${i}`} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isSel = selectedDate === dateStr;
+          const isPast = dateStr < today;
+          return (
+            <button
+              key={day}
+              type="button"
+              onClick={() => { if (!isPast) onSelectDate(dateStr); }}
+              className={`p-1.5 text-sm rounded-xl font-bold transition-all ${
+                isSel ? 'bg-blue-600 text-white' :
+                isPast ? 'text-slate-300 cursor-default' :
+                'hover:bg-slate-100 text-slate-700'
+              }`}
+            >{day}</button>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-center gap-3 mt-3 pt-3 border-t border-slate-100">
+        <button type="button" onClick={onPrevYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">‹ {year - 1}</button>
+        <span className="text-sm font-black text-slate-700">{year}</span>
+        <button type="button" onClick={onNextYear} className="px-2 py-1 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-lg">{year + 1} ›</button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+export default function MenuCart({ userProfile }) {
   const [allItems, setAllItems] = useState([]);
-  const [filteredItems, setFilteredItems] = useState([]);
   const [cart, setCart] = useState({});
   const [selectedShift, setSelectedShift] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [orderSuccess, setOrderSuccess] = useState(null); // null | { status }
+  const [orderSuccess, setOrderSuccess] = useState(null);
   const [submitError, setSubmitError] = useState('');
   const [settings, setSettings] = useState(null);
 
-  // Stany do kalendarza
-  const [selectedDate, setSelectedDate] = useState('');
-  const [availableDays, setAvailableDays] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(() => getLocalToday());
+  const [calendarOffset, setCalendarOffset] = useState(0);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(() => new Date().getMonth());
+  const [pickerPos, setPickerPos] = useState(null);
+  const datePickerBtnRef = useRef(null);
 
-  // 1. Generujemy dni i pobieramy menu
+  const availableDays = useMemo(() => getDaysWindow(calendarOffset), [calendarOffset]);
+
+  // Fetch menu whenever the 7-day window changes
   useEffect(() => {
-    const days = [];
-    const dayNames = ['Niedz', 'Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob'];
-
-    for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      // Data w strefie Europe/Warsaw, żeby po 22:00 nie skakać na jutro.
-      const localDate = new Intl.DateTimeFormat('sv-SE', {
-        timeZone: 'Europe/Warsaw',
-      }).format(d);
-      days.push({
-        date: localDate,
-        name: i === 0 ? 'Dziś' : dayNames[d.getDay()],
-        dayNum: d.getDate(),
-      });
-    }
-    setAvailableDays(days);
-    setSelectedDate(days[0].date);
-
     async function fetchMenu() {
-      const { data, error } = await supabase
-        .from('menu_items')
-        .select('id, name, price, available_date')
-        .gte('available_date', days[0].date)
-        .lte('available_date', days[6].date);
-
-      if (error) {
-        console.error('menu_items fetch', error);
-      } else {
-        setAllItems(data || []);
-      }
-      
-      const { data: settingsData } = await supabase.from('system_settings').select('*').eq('id', 1).single();
+      const days = getDaysWindow(calendarOffset);
+      const [{ data }, { data: settingsData }] = await Promise.all([
+        supabase
+          .from('menu_items')
+          .select('id, name, price, available_date')
+          .gte('available_date', days[0].date)
+          .lte('available_date', days[6].date),
+        supabase.from('system_settings').select('*').eq('id', 1).single(),
+      ]);
+      setAllItems(data || []);
       if (settingsData) setSettings(settingsData);
     }
     fetchMenu();
-  }, []);
+  }, [calendarOffset]);
 
-  // 2. Filtrujemy menu po dacie
+  // Reset cart when date changes
   useEffect(() => {
-    if (!selectedDate) return;
-    setFilteredItems(allItems.filter((item) => item.available_date === selectedDate));
     setCart({});
     setSubmitError('');
     setOrderSuccess(null);
-  }, [selectedDate, allItems]);
+  }, [selectedDate]);
 
-  // Klucze koszyka trzymamy jako STRING — żeby działało dla id typu uuid i bigint.
+  const filteredItems = allItems.filter((item) => item.available_date === selectedDate);
+
   const addToCart = (id) =>
     setCart((prev) => ({ ...prev, [String(id)]: (prev[String(id)] || 0) + 1 }));
 
@@ -79,7 +150,6 @@ export default function MenuCart({ userProfile, userId }) {
     });
   };
 
-  // UI: orientacyjny total. Wiążącą wartość liczy RPC w bazie.
   const totalAmount = filteredItems.reduce(
     (sum, item) => sum + item.price * (cart[String(item.id)] || 0),
     0
@@ -92,26 +162,18 @@ export default function MenuCart({ userProfile, userId }) {
     setSubmitError('');
     setOrderSuccess(null);
     try {
-      const items = Object.entries(cart).map(([itemId, quantity]) => ({
-        menu_item_id: itemId,
-        quantity,
-      }));
-
+      const items = Object.entries(cart).map(([itemId, quantity]) => ({ menu_item_id: itemId, quantity }));
       const { data: orderId, error } = await supabase.rpc('create_order', {
         p_delivery_date: selectedDate,
         p_shift: selectedShift,
         p_items: items,
       });
-
       if (error) throw error;
-
-      // Pobierz status nowego zamówienia (RPC zwraca tylko id).
       const { data: created } = await supabase
         .from('orders')
         .select('status, total_price, employer_paid, employee_paid')
         .eq('id', orderId)
         .single();
-
       setCart({});
       setOrderSuccess(created || { status: 'approved' });
       setTimeout(() => setOrderSuccess(null), 6000);
@@ -124,71 +186,112 @@ export default function MenuCart({ userProfile, userId }) {
 
   const isOrderAllowed = () => {
     if (!settings) return false;
-    
     const now = new Date();
-    const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
-    
+    const todayStr = getLocalToday();
     const isPrevDay = selectedShift === 1 ? settings.order_cutoff_shift1_prev_day : settings.order_cutoff_shift2_prev_day;
     const cutoffTime = selectedShift === 1 ? settings.order_cutoff_shift1 : settings.order_cutoff_shift2;
-    
     const deliveryDateObj = new Date(selectedDate);
-    if (isPrevDay) {
-      deliveryDateObj.setDate(deliveryDateObj.getDate() - 1);
-    }
+    if (isPrevDay) deliveryDateObj.setDate(deliveryDateObj.getDate() - 1);
     const cutoffDateStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(deliveryDateObj);
-    
     if (cutoffDateStr > todayStr) return true;
     if (cutoffDateStr < todayStr) return false;
-    
     const getHourFloat = (timeStr) => {
       if (!timeStr) return 0;
       const [h, m] = timeStr.split(':').map(Number);
       return h + (m || 0) / 60;
     };
-    
     const currentHour = now.getHours() + now.getMinutes() / 60;
-    if (currentHour < getHourFloat(cutoffTime)) return true;
-    
-    return false;
+    return currentHour < getHourFloat(cutoffTime);
   };
-  
+
   const canOrder = isOrderAllowed();
+
+  const handleSelectDate = (date) => {
+    setSelectedDate(date);
+    // Snap calendar window to show the selected week
+    const todayMs = new Date(); todayMs.setHours(0, 0, 0, 0);
+    const [y, m, d] = date.split('-').map(Number);
+    const diff = Math.round((new Date(y, m - 1, d) - todayMs) / 86400000);
+    setCalendarOffset(Math.max(0, Math.floor(diff / 7) * 7));
+    setShowDatePicker(false);
+  };
 
   return (
     <div className="glass text-slate-800 rounded-[2rem] p-6 max-w-md w-full animate-fade-in" style={{ animationDelay: '0.1s' }}>
+      {showDatePicker && (
+        <DatePickerDropdown
+          year={pickerYear}
+          month={pickerMonth}
+          selectedDate={selectedDate}
+          onSelectDate={handleSelectDate}
+          onPrevMonth={() => { if (pickerMonth === 0) { setPickerMonth(11); setPickerYear(y => y - 1); } else setPickerMonth(m => m - 1); }}
+          onNextMonth={() => { if (pickerMonth === 11) { setPickerMonth(0); setPickerYear(y => y + 1); } else setPickerMonth(m => m + 1); }}
+          onPrevYear={() => setPickerYear(y => y - 1)}
+          onNextYear={() => setPickerYear(y => y + 1)}
+          pos={pickerPos}
+          onClose={() => setShowDatePicker(false)}
+        />
+      )}
+
       {/* PASEK WYBORU DNIA */}
       <div className="mb-8">
-        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">
+        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
           Wybierz dzień dostawy
         </label>
-        <div
-          className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2"
-          style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}
-        >
-          {availableDays.map((day) => {
-            const isSelected = selectedDate === day.date;
-            return (
-              <button
-                key={day.date}
-                onClick={() => setSelectedDate(day.date)}
-                className={`flex flex-col items-center justify-center min-w-[72px] py-4 rounded-2xl transition-all duration-300 ${
-                  isSelected
-                    ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105'
-                    : 'bg-white/60 text-slate-500 hover:bg-white hover:shadow-md border border-slate-200/50 backdrop-blur-sm'
-                }`}
-              >
-                <span
-                  className={`text-[10px] font-bold uppercase mb-1.5 tracking-wider ${
-                    isSelected ? 'text-blue-100' : 'text-slate-400'
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={() => setCalendarOffset((o) => Math.max(0, o - 7))}
+            disabled={calendarOffset === 0}
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 text-slate-500 font-black hover:bg-white hover:shadow-md transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ‹
+          </button>
+          <div
+            className="flex gap-2 overflow-x-auto flex-1 scrollbar-hide"
+            style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}
+          >
+            {availableDays.map((day) => {
+              const isSelected = selectedDate === day.date;
+              return (
+                <button
+                  key={day.date}
+                  onClick={() => setSelectedDate(day.date)}
+                  className={`flex flex-col items-center justify-center min-w-[60px] py-3 rounded-2xl transition-all duration-300 ${
+                    isSelected
+                      ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105'
+                      : 'bg-white/60 text-slate-500 hover:bg-white hover:shadow-md border border-slate-200/50 backdrop-blur-sm'
                   }`}
                 >
-                  {day.name}
-                </span>
-                <span className="text-2xl font-black font-heading leading-none">{day.dayNum}</span>
-              </button>
-            );
-          })}
+                  <span className={`text-[10px] font-bold uppercase mb-1 tracking-wider ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>
+                    {day.name}
+                  </span>
+                  <span className="text-xl font-black font-heading leading-none">{day.dayNum}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => setCalendarOffset((o) => o + 7)}
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 text-slate-500 font-black hover:bg-white hover:shadow-md transition-all"
+          >
+            ›
+          </button>
         </div>
+        <button
+          ref={datePickerBtnRef}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!showDatePicker) {
+              const rect = datePickerBtnRef.current.getBoundingClientRect();
+              const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292));
+              setPickerPos({ top: rect.bottom + 8, left });
+            }
+            setShowDatePicker((p) => !p);
+          }}
+          className="w-full py-2 rounded-xl bg-white/50 border border-slate-200/50 text-slate-500 text-xs font-bold hover:bg-white hover:shadow-sm transition-all backdrop-blur-sm"
+        >
+          📅 Wybierz datę
+        </button>
       </div>
 
       {/* WYBÓR ZMIANY */}
@@ -223,9 +326,10 @@ export default function MenuCart({ userProfile, userId }) {
             <p className="text-red-500 font-bold mb-2">Czas minął ⏰</p>
             <p className="text-slate-500 font-medium text-sm px-4">
               Nie można już składać zamówień na wybraną datę i zmianę.
-              <br/>(Limit dla ZM {selectedShift}: {settings ? 
-                `${settings[`order_cutoff_shift${selectedShift}_prev_day`] ? 'Dzień wcześniej' : 'W dniu dostawy'} ${settings[`order_cutoff_shift${selectedShift}`]?.substring(0, 5)}`
-              : '?'})
+              <br />(Limit dla ZM {selectedShift}:{' '}
+              {settings
+                ? `${settings[`order_cutoff_shift${selectedShift}_prev_day`] ? 'Dzień wcześniej' : 'W dniu dostawy'} ${settings[`order_cutoff_shift${selectedShift}`]?.substring(0, 5)}`
+                : '?'})
             </p>
           </div>
         ) : filteredItems.length === 0 ? (
@@ -241,8 +345,8 @@ export default function MenuCart({ userProfile, userId }) {
                 <li
                   key={key}
                   className={`flex justify-between items-center p-4 rounded-2xl border transition-all duration-300 backdrop-blur-sm ${
-                    inCart 
-                      ? 'bg-white border-blue-200 shadow-md shadow-blue-500/5' 
+                    inCart
+                      ? 'bg-white border-blue-200 shadow-md shadow-blue-500/5'
                       : 'bg-white/60 border-slate-200/50 hover:bg-white hover:shadow-md'
                   }`}
                 >
@@ -256,16 +360,12 @@ export default function MenuCart({ userProfile, userId }) {
                         <button
                           onClick={() => removeFromCart(item.id)}
                           className="w-8 h-8 flex items-center justify-center rounded-xl bg-white text-slate-600 shadow-sm border border-slate-200 font-bold hover:text-red-500 hover:border-red-200 transition-colors"
-                        >
-                          -
-                        </button>
+                        >-</button>
                         <span className="font-bold w-4 text-center text-slate-800">{cart[key]}</span>
                         <button
                           onClick={() => addToCart(item.id)}
                           className="w-8 h-8 flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm font-bold hover:shadow-md transition-all"
-                        >
-                          +
-                        </button>
+                        >+</button>
                       </>
                     ) : (
                       <button

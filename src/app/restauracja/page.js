@@ -243,7 +243,7 @@ export default function RestauracjaPanel() {
       id,
       shift,
       created_at,
-      profiles ( first_name, last_name, companies ( name ), canteens ( name ) ),
+      profiles ( first_name, last_name, companies ( name ) ),
       order_items ( quantity, menu_items ( name ) )
     `;
 
@@ -261,7 +261,6 @@ export default function RestauracjaPanel() {
         const target = order.shift === 1 ? s1 : s2;
         const personName = `${order.profiles?.first_name} ${order.profiles?.last_name}`;
         const companyName = order.profiles?.companies?.name || 'Indywidualny';
-        const canteenName = order.profiles?.canteens?.name || '';
         const dishesStr = [];
 
         order.order_items.forEach(item => {
@@ -270,7 +269,7 @@ export default function RestauracjaPanel() {
           target[dishName] = (target[dishName] || 0) + qty;
           dishesStr.push(`${qty}x ${dishName}`);
           for (let i = 0; i < qty; i++) {
-            detailedList.push({ shift: order.shift, person: personName, company: companyName, canteen: canteenName, dish: dishName });
+            detailedList.push({ shift: order.shift, person: personName, company: companyName, canteen: '', dish: dishName });
           }
         });
 
@@ -279,7 +278,7 @@ export default function RestauracjaPanel() {
           shift: order.shift,
           person: personName,
           company: companyName,
-          canteen: canteenName,
+          canteen: '',
           dishes: dishesStr.join(', '),
           createdAt: new Date(order.created_at).toLocaleString('pl-PL'),
         });
@@ -291,7 +290,6 @@ export default function RestauracjaPanel() {
       cancelledData.forEach(order => {
         const personName = `${order.profiles?.first_name} ${order.profiles?.last_name}`;
         const companyName = order.profiles?.companies?.name || 'Indywidualny';
-        const canteenName = order.profiles?.canteens?.name || '';
         const dishesStr = order.order_items.map(item => `${item.quantity}x ${item.menu_items.name}`).join(', ');
 
         cancelledList.push({
@@ -299,17 +297,17 @@ export default function RestauracjaPanel() {
           shift: order.shift,
           person: personName,
           company: companyName,
-          canteen: canteenName,
+          canteen: '',
           dishes: dishesStr,
           createdAt: new Date(order.created_at).toLocaleString('pl-PL'),
         });
       });
-      cancelledList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company) || a.canteen.localeCompare(b.canteen));
+      cancelledList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
     }
 
     setShift1Summary(s1);
     setShift2Summary(s2);
-    detailedList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company) || a.canteen.localeCompare(b.canteen));
+    detailedList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
     setDetailedOrders(detailedList);
     activeList.sort((a, b) => a.shift - b.shift || a.id - b.id);
     setActiveOrders(activeList);
