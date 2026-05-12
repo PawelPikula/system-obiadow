@@ -928,42 +928,44 @@ export default function RestauracjaPanel() {
           {activeTab === 'produkcja' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               
-              <div className="mb-8 flex flex-col xl:flex-row xl:items-center justify-between gap-6 glass p-6 rounded-3xl border border-slate-200/50">
-                <h2 className="text-2xl font-heading font-black text-slate-800 shrink-0">Raport dnia: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">{selectedDate}</span></h2>
-                
-                <div className="flex flex-col sm:flex-row gap-4 mb-6 bg-white/40 p-5 rounded-2xl border border-slate-200/50">
-                  <div className="flex flex-col gap-1.5 w-full sm:w-1/2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Filtruj wg Firmy</label>
-                    <select className="p-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm transition-all hover:bg-slate-50" value={printFilterCompany} onChange={handlePrintCompanyChange}>
-                      <option value="all">Wszystkie Firmy</option>
-                      {uniquePrintCompanies.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1.5 w-full sm:w-1/2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Filtruj wg Stołówki</label>
-                    <select className="p-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm transition-all hover:bg-slate-50" value={printFilterCanteen} onChange={(e) => setPrintFilterCanteen(e.target.value)}>
-                      <option value="all">Wszystkie Stołówki</option>
-                      {uniquePrintCanteens.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                </div>
+              <div className="mb-8 glass p-6 rounded-3xl border border-slate-200/50">
+                <h2 className="text-2xl font-heading font-black text-slate-800 mb-5">Raport dnia: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">{selectedDate}</span></h2>
 
-                <div className="flex flex-col sm:flex-row gap-4 xl:gap-8 overflow-x-auto pb-2 scrollbar-hide">
-                  <div className="flex flex-col gap-2 min-w-max">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">🖨️ Raport Kuchni</span>
-                    <div className="flex gap-2">
-                      <button onClick={() => handlePrint('report', 'all')} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-900 shadow-sm transition-all hover:-translate-y-0.5">Wszystko</button>
-                      <button onClick={() => handlePrint('report', 1)} className="bg-slate-600 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-slate-700 shadow-sm transition-all hover:-translate-y-0.5">ZM 1</button>
-                      <button onClick={() => handlePrint('report', 2)} className="bg-slate-600 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-slate-700 shadow-sm transition-all hover:-translate-y-0.5">ZM 2</button>
+                <div className="flex flex-col lg:flex-row gap-4">
+                  <div className="flex flex-col sm:flex-row gap-4 bg-white/40 p-4 rounded-2xl border border-slate-200/50 flex-1">
+                    <div className="flex flex-col gap-1.5 flex-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Filtruj wg Firmy</label>
+                      <select className="p-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm transition-all hover:bg-slate-50" value={printFilterCompany} onChange={handlePrintCompanyChange}>
+                        <option value="all">Wszystkie Firmy</option>
+                        {uniquePrintCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1.5 flex-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Filtruj wg Stołówki</label>
+                      <select className="p-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm transition-all hover:bg-slate-50" value={printFilterCanteen} onChange={(e) => setPrintFilterCanteen(e.target.value)}>
+                        <option value="all">Wszystkie Stołówki</option>
+                        {uniquePrintCanteens.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
                     </div>
                   </div>
-                  
-                  <div className="flex flex-col gap-2 min-w-max">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">🏷️ Naklejki</span>
-                    <div className="flex gap-2">
-                      <button onClick={() => handlePrint('stickers', 'all')} className="bg-gradient-to-br from-orange-400 to-orange-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:from-orange-500 hover:to-orange-700 shadow-sm transition-all hover:-translate-y-0.5">Wszystko</button>
-                      <button onClick={() => handlePrint('stickers', 1)} className="bg-orange-500 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-orange-600 shadow-sm transition-all hover:-translate-y-0.5">ZM 1</button>
-                      <button onClick={() => handlePrint('stickers', 2)} className="bg-orange-500 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-orange-600 shadow-sm transition-all hover:-translate-y-0.5">ZM 2</button>
+
+                  <div className="flex flex-wrap gap-4">
+                    <div className="flex flex-col gap-2">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">🖨️ Raport Kuchni</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => handlePrint('report', 'all')} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-900 shadow-sm transition-all hover:-translate-y-0.5">Wszystko</button>
+                        <button onClick={() => handlePrint('report', 1)} className="bg-slate-600 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-slate-700 shadow-sm transition-all hover:-translate-y-0.5">ZM 1</button>
+                        <button onClick={() => handlePrint('report', 2)} className="bg-slate-600 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-slate-700 shadow-sm transition-all hover:-translate-y-0.5">ZM 2</button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">🏷️ Naklejki</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => handlePrint('stickers', 'all')} className="bg-gradient-to-br from-orange-400 to-orange-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:from-orange-500 hover:to-orange-700 shadow-sm transition-all hover:-translate-y-0.5">Wszystko</button>
+                        <button onClick={() => handlePrint('stickers', 1)} className="bg-orange-500 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-orange-600 shadow-sm transition-all hover:-translate-y-0.5">ZM 1</button>
+                        <button onClick={() => handlePrint('stickers', 2)} className="bg-orange-500 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-orange-600 shadow-sm transition-all hover:-translate-y-0.5">ZM 2</button>
+                      </div>
                     </div>
                   </div>
                 </div>
