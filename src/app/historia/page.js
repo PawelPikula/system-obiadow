@@ -10,6 +10,7 @@ export default function HistoriaPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalEmployeePaid: 0, count: 0 });
+  const [settings, setSettings] = useState(null);
 
   // Stany do obsługi formularza opinii
   const [reviewingItemId, setReviewingItemId] = useState(null);
@@ -58,6 +59,10 @@ export default function HistoriaPage() {
 
       setStats({ totalEmployeePaid: monthlyTotal, count: ordersData.length });
     }
+    
+    const { data: settingsData } = await supabase.from('system_settings').select('*').eq('id', 1).single();
+    if (settingsData) setSettings(settingsData);
+    
     setLoading(false);
   }
 
@@ -69,10 +74,17 @@ export default function HistoriaPage() {
     if (deliveryDate > todayStr) return true;
     if (deliveryDate < todayStr) return false;
     
-    // Jeśli to dzisiaj, sprawdzamy godzinę
+    if (!settings) return false;
+    
+    const getHourFloat = (timeStr) => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      return h + (m || 0) / 60;
+    };
+    
     const currentHour = now.getHours() + now.getMinutes() / 60;
-    if (shift === 1 && currentHour < 9) return true;
-    if (shift === 2 && currentHour < 12) return true;
+    if (shift === 1 && currentHour < getHourFloat(settings.cancel_cutoff_shift1)) return true;
+    if (shift === 2 && currentHour < getHourFloat(settings.cancel_cutoff_shift2)) return true;
     
     return false;
   };

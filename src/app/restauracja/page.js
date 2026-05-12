@@ -42,6 +42,9 @@ export default function RestauracjaPanel() {
   const [dishSearchQuery, setDishSearchQuery] = useState('');
   const wrapperRef = useRef(null);
 
+  // Ustawienia
+  const [settings, setSettings] = useState(null);
+
   // 1. Inicjalizacja przy starcie
   useEffect(() => {
     const days = [];
@@ -102,6 +105,10 @@ export default function RestauracjaPanel() {
       .order('id', { ascending: false }).limit(20);
 
     setReviews(reviewsData || []);
+    
+    const { data: settingsData } = await supabase.from('system_settings').select('*').eq('id', 1).single();
+    if (settingsData) setSettings(settingsData);
+    
     setLoading(false);
   }
 
@@ -256,12 +263,31 @@ export default function RestauracjaPanel() {
     if (selectedDate > todayStr) return true;
     if (selectedDate < todayStr) return false;
     
-    // Jeśli to dzisiaj, sprawdzamy godzinę
+    if (!settings) return false;
+    
+    const getHourFloat = (timeStr) => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      return h + (m || 0) / 60;
+    };
+    
     const currentHour = now.getHours() + now.getMinutes() / 60;
-    if (shift === 1 && currentHour < 9) return true;
-    if (shift === 2 && currentHour < 12) return true;
+    if (shift === 1 && currentHour < getHourFloat(settings.cancel_cutoff_shift1)) return true;
+    if (shift === 2 && currentHour < getHourFloat(settings.cancel_cutoff_shift2)) return true;
     
     return false;
+  };
+
+  const saveSettings = async () => {
+    const { error } = await supabase.from('system_settings').update({
+      order_cutoff_shift1: settings.order_cutoff_shift1,
+      order_cutoff_shift2: settings.order_cutoff_shift2,
+      cancel_cutoff_shift1: settings.cancel_cutoff_shift1,
+      cancel_cutoff_shift2: settings.cancel_cutoff_shift2,
+    }).eq('id', 1);
+    
+    if (error) toast.error('Błąd zapisu ustawień: ' + error.message);
+    else toast.success('Ustawienia pomyślnie zapisane!');
   };
 
   const handleCancelOrder = async (orderId) => {
@@ -519,6 +545,7 @@ export default function RestauracjaPanel() {
               <button onClick={() => setActiveTab('produkcja')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'produkcja' ? 'bg-white shadow-md text-orange-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>🔥 Produkcja & Raporty</button>
               <button onClick={() => setActiveTab('statystyki')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'statystyki' ? 'bg-white shadow-md text-green-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📊 Statystyki</button>
               <button onClick={() => setActiveTab('baza')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'baza' ? 'bg-white shadow-md text-purple-600 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>📖 Baza Dań</button>
+              <button onClick={() => setActiveTab('ustawienia')} className={`whitespace-nowrap px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === 'ustawienia' ? 'bg-white shadow-md text-slate-800 scale-105' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>⚙️ Ustawienia</button>
             </div>
             <Link href="/" className="bg-white/60 px-5 py-2.5 rounded-xl shadow-sm border border-slate-200/50 text-sm font-bold text-slate-600 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">Wyjście</Link>
           </header>
@@ -735,7 +762,7 @@ export default function RestauracjaPanel() {
                                   Czas minął
                                 </button>
                                 <p className="text-[10px] text-slate-400 mt-1">
-                                  (Limit dla ZM {order.shift}: {order.shift === 1 ? '09:00' : '12:00'})
+                                  (Limit dla ZM {order.shift}: {settings ? settings[`cancel_cutoff_shift${order.shift}`]?.substring(0, 5) : '?'})
                                 </p>
                               </div>
                             )}
@@ -747,6 +774,49 @@ export default function RestauracjaPanel() {
                 )}
               </div>
 
+            </div>
+          )}
+
+          {/* --- ZAKŁADKA: USTAWIENIA --- */}
+          {activeTab === 'ustawienia' && settings && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-2xl mx-auto">
+              <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50">
+                <h2 className="text-2xl font-heading font-black text-slate-800 mb-6 flex items-center gap-2"><span>⚙️</span> Ustawienia Systemowe</h2>
+                
+                <div className="space-y-6">
+                  <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Zamawianie (do której godziny można zamawiać?)</h3>
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">I Zmiana</label>
+                        <input type="time" value={settings.order_cutoff_shift1.substring(0, 5)} onChange={(e) => setSettings({...settings, order_cutoff_shift1: e.target.value + ':00'})} className="w-full p-3 rounded-xl border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">II Zmiana</label>
+                        <input type="time" value={settings.order_cutoff_shift2.substring(0, 5)} onChange={(e) => setSettings({...settings, order_cutoff_shift2: e.target.value + ':00'})} className="w-full p-3 rounded-xl border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white/60 p-6 rounded-2xl border border-slate-200/50 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Anulowanie (do której godziny można anulować?)</h3>
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">I Zmiana</label>
+                        <input type="time" value={settings.cancel_cutoff_shift1.substring(0, 5)} onChange={(e) => setSettings({...settings, cancel_cutoff_shift1: e.target.value + ':00'})} className="w-full p-3 rounded-xl border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">II Zmiana</label>
+                        <input type="time" value={settings.cancel_cutoff_shift2.substring(0, 5)} onChange={(e) => setSettings({...settings, cancel_cutoff_shift2: e.target.value + ':00'})} className="w-full p-3 rounded-xl border border-slate-200 font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button onClick={saveSettings} className="w-full mt-4 bg-slate-800 text-white font-bold py-4 rounded-xl hover:bg-slate-900 transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center justify-center gap-2">
+                    <span>💾</span> Zapisz Ustawienia
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

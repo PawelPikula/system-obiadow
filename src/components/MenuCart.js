@@ -10,6 +10,7 @@ export default function MenuCart({ userProfile, userId }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(null); // null | { status }
   const [submitError, setSubmitError] = useState('');
+  const [settings, setSettings] = useState(null);
 
   // Stany do kalendarza
   const [selectedDate, setSelectedDate] = useState('');
@@ -45,9 +46,12 @@ export default function MenuCart({ userProfile, userId }) {
 
       if (error) {
         console.error('menu_items fetch', error);
-        return;
+      } else {
+        setAllItems(data || []);
       }
-      setAllItems(data || []);
+      
+      const { data: settingsData } = await supabase.from('system_settings').select('*').eq('id', 1).single();
+      if (settingsData) setSettings(settingsData);
     }
     fetchMenu();
   }, []);
@@ -118,6 +122,30 @@ export default function MenuCart({ userProfile, userId }) {
     }
   };
 
+  const isOrderAllowed = () => {
+    if (!settings) return false;
+    
+    const now = new Date();
+    const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(now);
+    
+    if (selectedDate > todayStr) return true;
+    if (selectedDate < todayStr) return false;
+    
+    const getHourFloat = (timeStr) => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      return h + (m || 0) / 60;
+    };
+    
+    const currentHour = now.getHours() + now.getMinutes() / 60;
+    if (selectedShift === 1 && currentHour < getHourFloat(settings.order_cutoff_shift1)) return true;
+    if (selectedShift === 2 && currentHour < getHourFloat(settings.order_cutoff_shift2)) return true;
+    
+    return false;
+  };
+  
+  const canOrder = isOrderAllowed();
+
   return (
     <div className="glass text-slate-800 rounded-[2rem] p-6 max-w-md w-full animate-fade-in" style={{ animationDelay: '0.1s' }}>
       {/* PASEK WYBORU DNIA */}
@@ -182,7 +210,15 @@ export default function MenuCart({ userProfile, userId }) {
       </h2>
 
       <div className="animate-slide-up" style={{ animationDelay: '0.4s' }}>
-        {filteredItems.length === 0 ? (
+        {!canOrder ? (
+          <div className="py-10 text-center bg-red-50/50 rounded-3xl border-2 border-dashed border-red-200 backdrop-blur-sm">
+            <p className="text-red-500 font-bold mb-2">Czas minął ⏰</p>
+            <p className="text-slate-500 font-medium text-sm px-4">
+              Nie można już składać zamówień na wybraną datę i zmianę.
+              <br/>(Limit dla ZM {selectedShift}: {settings ? settings[`order_cutoff_shift${selectedShift}`]?.substring(0, 5) : '?'})
+            </p>
+          </div>
+        ) : filteredItems.length === 0 ? (
           <div className="py-10 text-center bg-white/40 rounded-3xl border-2 border-dashed border-slate-300/50 backdrop-blur-sm">
             <p className="text-slate-500 font-medium">Brak dodanego menu na ten dzień.</p>
           </div>
@@ -259,7 +295,7 @@ export default function MenuCart({ userProfile, userId }) {
         </div>
       )}
 
-      {totalAmount > 0 && (
+      {totalAmount > 0 && canOrder && (
         <div className="mt-8 pt-6 border-t border-slate-200/50 animate-slide-up" style={{ animationDelay: '0.5s' }}>
           <div className="flex justify-between items-end">
             <div>
