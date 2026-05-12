@@ -484,6 +484,7 @@ export default function AdminPanel() {
               )}
             </div>
           </div>
+        )}
         {/* ZAKŁADKA: LOGI AUDYTOWE */}
         {activeTab === 'audit' && (
           <div className="animate-slide-up">
