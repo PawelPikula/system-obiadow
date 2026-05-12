@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -105,9 +105,53 @@ export default function RestauracjaPanel() {
   // Dane do produkcji
   const [shift1Summary, setShift1Summary] = useState({});
   const [shift2Summary, setShift2Summary] = useState({});
+  const [printShift, setPrintShift] = useState('all');
+  const [printFilterCompany, setPrintFilterCompany] = useState('all');
+  const [printFilterCanteen, setPrintFilterCanteen] = useState('all');
+
   const [detailedOrders, setDetailedOrders] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
   const [cancelledOrders, setCancelledOrders] = useState([]);
+
+  const uniquePrintCompanies = useMemo(() => {
+    return [...new Set(detailedOrders.map(o => o.company))].sort();
+  }, [detailedOrders]);
+
+  const uniquePrintCanteens = useMemo(() => {
+    const filtered = printFilterCompany === 'all' 
+      ? detailedOrders 
+      : detailedOrders.filter(o => o.company === printFilterCompany);
+    return [...new Set(filtered.map(o => o.canteen).filter(Boolean))].sort();
+  }, [detailedOrders, printFilterCompany]);
+
+  const handlePrintCompanyChange = (e) => {
+    setPrintFilterCompany(e.target.value);
+    setPrintFilterCanteen('all');
+  };
+
+  const printFilteredDetailed = useMemo(() => {
+    return detailedOrders.filter(order => {
+      if (printFilterCompany !== 'all' && order.company !== printFilterCompany) return false;
+      if (printFilterCanteen !== 'all' && order.canteen !== printFilterCanteen) return false;
+      return true;
+    });
+  }, [detailedOrders, printFilterCompany, printFilterCanteen]);
+
+  const printShift1Summary = useMemo(() => {
+    const s = {};
+    printFilteredDetailed.filter(o => o.shift === 1).forEach(o => {
+      s[o.dish] = (s[o.dish] || 0) + 1;
+    });
+    return s;
+  }, [printFilteredDetailed]);
+
+  const printShift2Summary = useMemo(() => {
+    const s = {};
+    printFilteredDetailed.filter(o => o.shift === 2).forEach(o => {
+      s[o.dish] = (s[o.dish] || 0) + 1;
+    });
+    return s;
+  }, [printFilteredDetailed]);
 
   // Statystyki
   const [statsData, setStatsData] = useState({
@@ -200,7 +244,7 @@ export default function RestauracjaPanel() {
       id,
       shift,
       created_at,
-      profiles ( first_name, last_name, companies ( name ) ),
+      profiles ( first_name, last_name, companies ( name ), canteens ( name ) ),
       order_items ( quantity, menu_items ( name ) )
     `;
 
@@ -218,6 +262,7 @@ export default function RestauracjaPanel() {
         const target = order.shift === 1 ? s1 : s2;
         const personName = `${order.profiles?.first_name} ${order.profiles?.last_name}`;
         const companyName = order.profiles?.companies?.name || 'Indywidualny';
+        const canteenName = order.profiles?.canteens?.name || '';
         const dishesStr = [];
 
         order.order_items.forEach(item => {
@@ -226,7 +271,7 @@ export default function RestauracjaPanel() {
           target[dishName] = (target[dishName] || 0) + qty;
           dishesStr.push(`${qty}x ${dishName}`);
           for (let i = 0; i < qty; i++) {
-            detailedList.push({ shift: order.shift, person: personName, company: companyName, dish: dishName });
+            detailedList.push({ shift: order.shift, person: personName, company: companyName, canteen: canteenName, dish: dishName });
           }
         });
 
@@ -235,6 +280,7 @@ export default function RestauracjaPanel() {
           shift: order.shift,
           person: personName,
           company: companyName,
+          canteen: canteenName,
           dishes: dishesStr.join(', '),
           createdAt: new Date(order.created_at).toLocaleString('pl-PL'),
         });
@@ -246,22 +292,25 @@ export default function RestauracjaPanel() {
       cancelledData.forEach(order => {
         const personName = `${order.profiles?.first_name} ${order.profiles?.last_name}`;
         const companyName = order.profiles?.companies?.name || 'Indywidualny';
-        order.order_items.forEach(item => {
-          cancelledList.push({
-            shift: order.shift,
-            person: personName,
-            company: companyName,
-            dish: item.menu_items.name,
-            quantity: item.quantity,
-          });
+        const canteenName = order.profiles?.canteens?.name || '';
+        const dishesStr = order.order_items.map(item => `${item.quantity}x ${item.menu_items.name}`).join(', ');
+
+        cancelledList.push({
+          id: order.id,
+          shift: order.shift,
+          person: personName,
+          company: companyName,
+          canteen: canteenName,
+          dishes: dishesStr,
+          createdAt: new Date(order.created_at).toLocaleString('pl-PL'),
         });
       });
-      cancelledList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
+      cancelledList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company) || a.canteen.localeCompare(b.canteen));
     }
 
     setShift1Summary(s1);
     setShift2Summary(s2);
-    detailedList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company));
+    detailedList.sort((a, b) => a.shift - b.shift || a.company.localeCompare(b.company) || a.canteen.localeCompare(b.canteen));
     setDetailedOrders(detailedList);
     activeList.sort((a, b) => a.shift - b.shift || a.id - b.id);
     setActiveOrders(activeList);
@@ -529,9 +578,6 @@ export default function RestauracjaPanel() {
         {/* ========================================= */}
         {/* WIDOK DO DRUKU 1: RAPORT DLA KUCHNI       */}
         {/* ========================================= */}
-        {/* ========================================= */}
-        {/* WIDOK DO DRUKU 1: RAPORT DLA KUCHNI       */}
-        {/* ========================================= */}
         {printMode === 'report' && (
           <div className="hidden print:block font-sans text-slate-900">
             {/* Nowoczesny Header */}
@@ -555,7 +601,7 @@ export default function RestauracjaPanel() {
                     <h2 className="text-2xl font-black uppercase tracking-wider">Pierwsza Zmiana</h2>
                   </div>
                   
-                  {Object.keys(shift1Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
+                  {Object.keys(printShift1Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
                     <div className="rounded-2xl overflow-hidden border border-slate-200">
                       <table className="w-full text-left">
                         <thead className="bg-slate-100 border-b border-slate-200">
@@ -565,7 +611,7 @@ export default function RestauracjaPanel() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {Object.entries(shift1Summary).map(([name, qty]) => (
+                          {Object.entries(printShift1Summary).map(([name, qty]) => (
                             <tr key={name} className="break-inside-avoid">
                               <td className="py-4 px-5 font-bold text-lg text-slate-800">{name}</td>
                               <td className="py-4 px-5 text-right"><span className="text-2xl font-black bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">{qty}</span></td>
@@ -575,7 +621,7 @@ export default function RestauracjaPanel() {
                         <tfoot className="bg-slate-50 border-t-2 border-slate-800">
                           <tr>
                             <td className="py-4 px-5 font-black uppercase text-sm">Suma porcji:</td>
-                            <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(shift1Summary).reduce((a, b) => a + b, 0)}</td>
+                            <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(printShift1Summary).reduce((a, b) => a + b, 0)}</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -592,7 +638,7 @@ export default function RestauracjaPanel() {
                     <h2 className="text-2xl font-black uppercase tracking-wider">Druga Zmiana</h2>
                   </div>
 
-                  {Object.keys(shift2Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
+                  {Object.keys(printShift2Summary).length === 0 ? <p className="italic text-slate-400 bg-slate-50 p-6 rounded-2xl text-center border border-dashed border-slate-200">Brak zamówień na tę zmianę</p> : (
                     <div className="rounded-2xl overflow-hidden border border-slate-200">
                       <table className="w-full text-left">
                         <thead className="bg-slate-100 border-b border-slate-200">
@@ -602,7 +648,7 @@ export default function RestauracjaPanel() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {Object.entries(shift2Summary).map(([name, qty]) => (
+                          {Object.entries(printShift2Summary).map(([name, qty]) => (
                             <tr key={name} className="break-inside-avoid">
                               <td className="py-4 px-5 font-bold text-lg text-slate-800">{name}</td>
                               <td className="py-4 px-5 text-right"><span className="text-2xl font-black bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">{qty}</span></td>
@@ -612,7 +658,7 @@ export default function RestauracjaPanel() {
                         <tfoot className="bg-slate-50 border-t-2 border-slate-800">
                           <tr>
                             <td className="py-4 px-5 font-black uppercase text-sm">Suma porcji:</td>
-                            <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(shift2Summary).reduce((a, b) => a + b, 0)}</td>
+                            <td className="py-4 px-5 text-right text-2xl font-black">{Object.values(printShift2Summary).reduce((a, b) => a + b, 0)}</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -647,7 +693,7 @@ export default function RestauracjaPanel() {
                 height: 37mm;
                 padding: 4mm;
                 box-sizing: border-box;
-                border: 1px dashed #e2e8f0; /* Bardzo delikatna ramka pomocnicza */
+                border: 1px dashed #e2e8f0;
                 overflow: hidden;
                 display: flex;
                 flex-direction: column;
@@ -655,22 +701,19 @@ export default function RestauracjaPanel() {
               }
             `}</style>
             <div className="stickers-grid">
-              {detailedOrders
+              {printFilteredDetailed
                 .filter(order => printShift === 'all' || order.shift === printShift)
                 .map((order, idx) => (
                 <div key={idx} className="sticker font-sans">
-                  {/* Górna sekcja - Odbiorca */}
                   <div className="text-center mb-1">
                     <p className="text-[12pt] font-black leading-tight truncate">{order.person}</p>
-                    <p className="text-[8pt] text-slate-500 font-bold truncate tracking-wide uppercase border-b border-slate-200 pb-1 mx-2">{order.company}</p>
+                    <p className="text-[8pt] text-slate-500 font-bold truncate tracking-wide uppercase border-b border-slate-200 pb-1 mx-2">
+                      {order.company} {order.canteen && `- ${order.canteen}`}
+                    </p>
                   </div>
-                  
-                  {/* Środkowa sekcja - Danie */}
                   <div className="flex-grow flex items-center justify-center">
                     <p className="text-[14pt] font-heading font-black leading-none text-center px-1 break-words">{order.dish}</p>
                   </div>
-                  
-                  {/* Dolna sekcja - Metadane */}
                   <div className="flex justify-between items-end mt-1 px-1">
                     <span className="text-[8pt] font-bold text-slate-400">{selectedDate}</span>
                     <span className="text-[10pt] font-black bg-slate-800 text-white px-2 py-0.5 rounded-md leading-none">ZM {order.shift}</span>
@@ -788,34 +831,23 @@ export default function RestauracjaPanel() {
                   </form>
                 </div>
 
-                {/* KOPIOWANIE Z POPRZEDNICH DNI */}
                 <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
-                  <button
-                    type="button"
-                    onClick={toggleCopyPanel}
-                    className="w-full flex justify-between items-center"
-                  >
-                    <h2 className="text-lg font-heading font-black text-slate-800 flex items-center gap-2">
-                      <span>📋</span> Kopiuj z poprzednich dni
-                    </h2>
+                  <button type="button" onClick={toggleCopyPanel} className="w-full flex justify-between items-center">
+                    <h2 className="text-lg font-heading font-black text-slate-800 flex items-center gap-2"><span>📋</span> Kopiuj z poprzednich dni</h2>
                     <span className={`text-slate-400 text-xs font-bold transition-transform duration-300 ${showCopyPanel ? 'rotate-180' : ''}`}>▼</span>
                   </button>
-
                   {showCopyPanel && (() => {
                     const copySourceItems = pastMenuItems.filter(i => i.available_date === copySourceDate);
                     return (
                       <div className="mt-5">
-                        {/* Kalendarz kopiowania */}
                         <div className="flex items-center gap-2 mb-4">
-                          <button type="button" onClick={() => setCopyCalOffset(p => p - 1)}
-                            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all">‹</button>
+                          <button type="button" onClick={() => setCopyCalOffset(p => p - 1)} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all">‹</button>
                           <div className="flex gap-1.5 overflow-x-auto flex-1 pb-1 scrollbar-hide" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
                             {getDaysWindow(copyCalOffset).map((day) => {
                               const isSelected = copySourceDate === day.date;
                               const hasDishes = pastMenuItems.some(item => item.available_date === day.date);
                               return (
-                                <button key={day.date} type="button" onClick={() => setCopySourceDate(day.date)}
-                                  className={`flex flex-col items-center justify-center min-w-[60px] py-2.5 rounded-xl transition-all duration-300 shrink-0 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md scale-105' : 'bg-white/60 text-slate-500 border border-slate-200/50 hover:bg-white hover:shadow-sm backdrop-blur-sm'}`}>
+                                <button key={day.date} type="button" onClick={() => setCopySourceDate(day.date)} className={`flex flex-col items-center justify-center min-w-[60px] py-2.5 rounded-xl transition-all duration-300 shrink-0 ${isSelected ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md scale-105' : 'bg-white/60 text-slate-500 border border-slate-200/50 hover:bg-white hover:shadow-sm backdrop-blur-sm'}`}>
                                   <span className={`text-[9px] font-bold uppercase mb-0.5 tracking-wider ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>{day.name}</span>
                                   <span className="text-lg font-heading font-black leading-none">{day.dayNum}</span>
                                   {hasDishes && <div className={`w-1 h-1 rounded-full mt-1 ${isSelected ? 'bg-white' : 'bg-blue-400'}`} />}
@@ -823,51 +855,19 @@ export default function RestauracjaPanel() {
                               );
                             })}
                           </div>
-                          <button type="button" onClick={() => setCopyCalOffset(p => p + 1)}
-                            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all">›</button>
+                          <button type="button" onClick={() => setCopyCalOffset(p => p + 1)} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200/50 hover:bg-white hover:shadow-md text-slate-600 font-black text-lg transition-all">›</button>
                           <div className="relative shrink-0">
-                            <button
-                              ref={copyDatePickerBtnRef}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!showCopyDatePicker) {
-                                  const rect = copyDatePickerBtnRef.current.getBoundingClientRect();
-                                  const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292));
-                                  setCopyPickerPos({ top: rect.bottom + 8, left });
-                                }
-                                setShowCopyDatePicker(p => !p);
-                              }}
-                              className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white hover:shadow-sm transition-all text-base backdrop-blur-sm" title="Wybierz datę">📅</button>
+                            <button ref={copyDatePickerBtnRef} type="button" onClick={(e) => { e.stopPropagation(); if (!showCopyDatePicker) { const rect = copyDatePickerBtnRef.current.getBoundingClientRect(); const left = Math.max(4, Math.min(rect.right - 288, window.innerWidth - 292)); setCopyPickerPos({ top: rect.bottom + 8, left }); } setShowCopyDatePicker(p => !p); }} className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/60 border border-slate-200 hover:bg-white hover:shadow-sm transition-all text-base backdrop-blur-sm" title="Wybierz datę">📅</button>
                             {showCopyDatePicker && (
-                              <DatePickerDropdown
-                                year={copyPickerYear} month={copyPickerMonth}
-                                selectedDate={copySourceDate}
-                                pos={copyPickerPos}
-                                onClose={() => setShowCopyDatePicker(false)}
-                                onSelectDate={(d) => { setCopySourceDate(d); setCopyCalOffset(getDayDiff(d)); setShowCopyDatePicker(false); }}
-                                onPrevMonth={() => copyPickerMonth === 0 ? (setCopyPickerYear(y => y - 1), setCopyPickerMonth(11)) : setCopyPickerMonth(m => m - 1)}
-                                onNextMonth={() => copyPickerMonth === 11 ? (setCopyPickerYear(y => y + 1), setCopyPickerMonth(0)) : setCopyPickerMonth(m => m + 1)}
-                                onPrevYear={() => setCopyPickerYear(y => y - 1)}
-                                onNextYear={() => setCopyPickerYear(y => y + 1)}
-                              />
+                              <DatePickerDropdown year={copyPickerYear} month={copyPickerMonth} selectedDate={copySourceDate} pos={copyPickerPos} onClose={() => setShowCopyDatePicker(false)} onSelectDate={(d) => { setCopySourceDate(d); setCopyCalOffset(getDayDiff(d)); setShowCopyDatePicker(false); }} onPrevMonth={() => copyPickerMonth === 0 ? (setCopyPickerYear(y => y - 1), setCopyPickerMonth(11)) : setCopyPickerMonth(m => m - 1)} onNextMonth={() => copyPickerMonth === 11 ? (setCopyPickerYear(y => y + 1), setCopyPickerMonth(0)) : setCopyPickerMonth(m => m + 1)} onPrevYear={() => setCopyPickerYear(y => y - 1)} onNextYear={() => setCopyPickerYear(y => y + 1)} />
                             )}
                           </div>
                         </div>
-
-                        {/* Lista dań z wybranego dnia */}
                         {copySourceDate && (
                           <>
                             <div className="flex justify-between items-center mb-3">
-                              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                Dania z {copySourceDate}:
-                              </p>
-                              <button
-                                type="button"
-                                onClick={handleCopyAll}
-                                disabled={copyingAll || copySourceItems.length === 0}
-                                className="text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-1.5 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:transform-none"
-                              >
+                              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Dania z {copySourceDate}:</p>
+                              <button type="button" onClick={handleCopyAll} disabled={copyingAll || copySourceItems.length === 0} className="text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-1.5 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:transform-none">
                                 {copyingAll ? 'Kopiowanie…' : 'Kopiuj wszystkie'}
                               </button>
                             </div>
@@ -877,23 +877,14 @@ export default function RestauracjaPanel() {
                               <ul className="space-y-2">
                                 {copySourceItems.map(item => (
                                   <li key={item.id} className="flex justify-between items-center p-3 bg-white/60 rounded-xl border border-slate-200/50 hover:bg-white transition-all">
-                                    <div>
-                                      <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                                      <p className="text-indigo-600 font-black text-xs">{item.price} zł</p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyDish(item)}
-                                      className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors shadow-sm whitespace-nowrap"
-                                    >
-                                      + Dodaj
-                                      </button>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </>
-                          )}
+                                    <div><p className="font-bold text-slate-800 text-sm">{item.name}</p><p className="text-indigo-600 font-black text-xs">{item.price} zł</p></div>
+                                    <button type="button" onClick={() => handleCopyDish(item)} className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors shadow-sm whitespace-nowrap">+ Dodaj</button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
+                        )}
                       </div>
                     );
                   })()}
@@ -914,7 +905,7 @@ export default function RestauracjaPanel() {
                 </div>
               </div>
 
-              {/* OPINIE Z GWIAZDKAMI */}
+              {/* OPINIE */}
               <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
                 <h2 className="text-xl font-heading font-black mb-5 text-slate-800 flex items-center gap-2"><span>⭐</span> Ostatnie opinie</h2>
                 <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
@@ -931,7 +922,6 @@ export default function RestauracjaPanel() {
                   )}
                 </div>
               </div>
-
             </div>
           )}
 
@@ -942,7 +932,23 @@ export default function RestauracjaPanel() {
               <div className="mb-8 flex flex-col xl:flex-row xl:items-center justify-between gap-6 glass p-6 rounded-3xl border border-slate-200/50">
                 <h2 className="text-2xl font-heading font-black text-slate-800 shrink-0">Raport dnia: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">{selectedDate}</span></h2>
                 
-                {/* PRZYCISKI DRUKOWANIA */}
+                <div className="flex flex-col sm:flex-row gap-4 mb-6 bg-white/40 p-5 rounded-2xl border border-slate-200/50">
+                  <div className="flex flex-col gap-1.5 w-full sm:w-1/2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Filtruj wg Firmy</label>
+                    <select className="p-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm transition-all hover:bg-slate-50" value={printFilterCompany} onChange={handlePrintCompanyChange}>
+                      <option value="all">Wszystkie Firmy</option>
+                      {uniquePrintCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5 w-full sm:w-1/2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Filtruj wg Stołówki</label>
+                    <select className="p-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm transition-all hover:bg-slate-50" value={printFilterCanteen} onChange={(e) => setPrintFilterCanteen(e.target.value)}>
+                      <option value="all">Wszystkie Stołówki</option>
+                      {uniquePrintCanteens.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+
                 <div className="flex flex-col sm:flex-row gap-4 xl:gap-8 overflow-x-auto pb-2 scrollbar-hide">
                   <div className="flex flex-col gap-2 min-w-max">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">🖨️ Raport Kuchni</span>
@@ -998,120 +1004,83 @@ export default function RestauracjaPanel() {
               {/* Tabela do pakowania */}
               <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50">
                 <h3 className="text-xl font-heading font-black text-slate-800 mb-6">Szczegółowa lista paczek (do pakowania):</h3>
-                
-                {detailedOrders.length === 0 ? (
-                  <div className="p-12 text-center bg-white/40 rounded-2xl border-2 border-dashed border-slate-300">
-                    <p className="text-slate-500 font-medium">Brak danych do wyświetlenia.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-2xl border border-slate-200/50 shadow-sm bg-white/40">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-white/60 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200/50">
-                          <th className="p-5 font-bold">Zmiana</th>
-                          <th className="p-5 font-bold">Firma</th>
-                          <th className="p-5 font-bold">Pracownik</th>
-                          <th className="p-5 font-bold">Zamówione Danie</th>
+                <div className="overflow-x-auto rounded-2xl border border-slate-200/50 shadow-sm bg-white/40">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-white/60 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200/50">
+                        <th className="p-5 font-bold">Zmiana</th>
+                        <th className="p-5 font-bold">Firma / Stołówka</th>
+                        <th className="p-5 font-bold">Pracownik</th>
+                        <th className="p-5 font-bold">Danie</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200/50">
+                      {detailedOrders.map((order, idx) => (
+                        <tr key={idx} className="hover:bg-white/80 transition-colors">
+                          <td className="p-5">
+                            <span className={`font-bold px-3 py-1.5 rounded-lg text-xs tracking-wider shadow-sm ${order.shift === 1 ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
+                              ZM {order.shift}
+                            </span>
+                          </td>
+                          <td className="p-5 font-bold text-slate-800">{order.company} {order.canteen && <span className="text-xs font-normal text-slate-400">({order.canteen})</span>}</td>
+                          <td className="p-5 text-slate-600 font-medium">{order.person}</td>
+                          <td className="p-5 font-black text-slate-800">{order.dish}</td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200/50">
-                        {detailedOrders.map((order, idx) => (
-                          <tr key={idx} className="hover:bg-white/80 transition-colors">
-                            <td className="p-5">
-                              <span className={`font-bold px-3 py-1.5 rounded-lg text-xs tracking-wider shadow-sm ${order.shift === 1 ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
-                                ZMIANA {order.shift}
-                              </span>
-                            </td>
-                            <td className="p-5 font-bold text-slate-800">{order.company}</td>
-                            <td className="p-5 text-slate-600 font-medium">{order.person}</td>
-                            <td className="p-5 font-black text-slate-800">{order.dish}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              {/* LISTA ZAMÓWIEŃ DO ZARZĄDZANIA (ANULOWANIA) */}
+              {/* LISTA ZAMÓWIEŃ DO ZARZĄDZANIA */}
               <div className="glass p-8 rounded-3xl shadow-lg border border-slate-200/50 mt-8">
                 <h3 className="text-xl font-heading font-black text-slate-800 mb-6 flex items-center gap-2"><span>🛡️</span> Zarządzanie Zamówieniami na ten dzień:</h3>
-                
                 {activeOrders.length === 0 ? (
                   <div className="p-12 text-center bg-white/40 rounded-2xl border-2 border-dashed border-slate-300">
                     <p className="text-slate-500 font-medium">Brak aktywnych zamówień.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {activeOrders.map(order => {
-                      const isCancelable = canCancel(order.shift);
-                      return (
-                        <div key={order.id} className="bg-white/60 p-5 rounded-2xl border border-slate-200/50 shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4 hover:bg-white hover:shadow-md transition-all">
-                          <div>
-                            <div className="flex items-center gap-3 mb-1">
-                              <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">ID: {order.id}</span>
-                              <span className={`text-xs font-bold px-2 py-1 rounded-md ${order.shift === 1 ? 'bg-orange-100 text-orange-700' : 'bg-indigo-100 text-indigo-700'}`}>ZM {order.shift}</span>
-                              <span className="font-bold text-slate-800">{order.person}</span>
-                              <span className="text-xs text-slate-500 uppercase tracking-wider">({order.company})</span>
-                            </div>
-                            <p className="font-black text-slate-700">{order.dishes}</p>
-                            <p className="text-[10px] text-slate-400 mt-1">Złożono: {order.createdAt}</p>
+                    {activeOrders.map(order => (
+                      <div key={order.id} className="bg-white/60 p-5 rounded-2xl border border-slate-200/50 shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4 hover:bg-white hover:shadow-md transition-all">
+                        <div>
+                          <div className="flex items-center gap-3 mb-1">
+                            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">ID: {order.id}</span>
+                            <span className={`text-xs font-bold px-2 py-1 rounded-md ${order.shift === 1 ? 'bg-orange-100 text-orange-700' : 'bg-indigo-100 text-indigo-700'}`}>ZM {order.shift}</span>
+                            <span className="font-bold text-slate-800">{order.person}</span>
                           </div>
-                          
-                          <div>
-                            {isCancelable ? (
-                              <button onClick={() => handleCancelOrder(order.id)} className="w-full md:w-auto bg-white text-red-500 border border-red-200 px-4 py-2 rounded-xl font-bold text-sm hover:bg-red-50 hover:border-red-300 shadow-sm transition-all active:scale-95">
-                                Anuluj Zamówienie
-                              </button>
-                            ) : (
-                              <div className="text-center md:text-right">
-                                <button disabled className="w-full md:w-auto bg-slate-100 text-slate-400 border border-slate-200 px-4 py-2 rounded-xl font-bold text-sm cursor-not-allowed">
-                                  Czas minął
-                                </button>
-                                <p className="text-[10px] text-slate-400 mt-1">
-                                  (Limit dla ZM {order.shift}: 
-                                  {settings ? 
-                                    `${settings[`cancel_cutoff_shift${order.shift}_prev_day`] ? 'Dzień wcześniej' : 'W dniu dostawy'} ${settings[`cancel_cutoff_shift${order.shift}`]?.substring(0, 5)}`
-                                  : '?'})
-                                </p>
-                              </div>
-                            )}
-                          </div>
+                          <p className="font-black text-slate-700">{order.dishes}</p>
+                          <p className="text-[10px] text-slate-400 mt-1">{order.company} {order.canteen && <span>- {order.canteen}</span>}</p>
                         </div>
-                      );
-                    })}
+                        {canCancel(order.shift) ? (
+                          <button onClick={() => handleCancelOrder(order.id)} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-xl font-bold text-sm hover:bg-red-50 active:scale-95">Anuluj</button>
+                        ) : <span className="text-xs font-bold text-slate-400">Czas minął</span>}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
 
-              {/* ANULOWANE ZAMÓWIENIA */}
+              {/* ANULOWANE */}
               {cancelledOrders.length > 0 && (
                 <div className="glass p-8 rounded-3xl shadow-lg border border-red-200/60 mt-8">
-                  <h3 className="text-xl font-heading font-black text-red-600 mb-6 flex items-center gap-2">
-                    <span>🚫</span> Anulowane zamówienia na ten dzień
-                    <span className="ml-2 text-sm font-bold bg-red-100 text-red-600 px-3 py-1 rounded-full">{cancelledOrders.length} porcji</span>
-                  </h3>
-                  <div className="overflow-x-auto rounded-2xl border border-red-100 shadow-sm bg-white/40">
+                  <h3 className="text-xl font-heading font-black text-red-600 mb-6">🚫 Anulowane zamówienia</h3>
+                  <div className="overflow-x-auto rounded-2xl border border-red-100 bg-white/40">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-red-50/80 text-slate-600 text-xs uppercase tracking-wider border-b border-red-100">
-                          <th className="p-5 font-bold">Zmiana</th>
-                          <th className="p-5 font-bold">Danie</th>
-                          <th className="p-5 font-bold">Pracownik</th>
-                          <th className="p-5 font-bold">Firma</th>
+                          <th className="p-5 font-bold">Zamówienie</th>
+                          <th className="p-5 font-bold">Klient</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-red-50">
+                      <tbody>
                         {cancelledOrders.map((order, idx) => (
                           <tr key={idx} className="hover:bg-red-50/40 transition-colors">
-                            <td className="p-5">
-                              <span className={`font-bold px-3 py-1.5 rounded-lg text-xs tracking-wider shadow-sm ${order.shift === 1 ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
-                                ZM {order.shift}
-                              </span>
+                            <td className="p-5 text-sm font-black text-slate-700 line-through decoration-red-400">{order.dishes}</td>
+                            <td className="p-5 text-sm font-medium text-slate-500">
+                              <p className="font-bold text-slate-700">{order.person}</p>
+                              <p className="text-xs text-slate-400">{order.company} {order.canteen && `- ${order.canteen}`}</p>
                             </td>
-                            <td className="p-5 font-black text-slate-700 line-through decoration-red-400">{order.quantity > 1 ? `${order.quantity}x ` : ''}{order.dish}</td>
-                            <td className="p-5 text-slate-500 font-medium">{order.person}</td>
-                            <td className="p-5 text-slate-500 font-medium">{order.company}</td>
                           </tr>
                         ))}
                       </tbody>
