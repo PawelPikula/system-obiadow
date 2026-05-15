@@ -40,7 +40,7 @@ export default function MenuCart({ userProfile }) {
       const to = days[6].date;
 
       const [{ data: menuData }, { data: settingsData }, { data: { session } }, ] = await Promise.all([
-        supabase.from('menu_items').select('id, name, price, available_date, max_quantity').gte('available_date', from).lte('available_date', to),
+        supabase.from('menu_items').select('id, name, price, available_date, max_quantity').eq('is_published', true).gte('available_date', from).lte('available_date', to),
         supabase.from('system_settings').select('*').eq('id', 1).single(),
         supabase.auth.getSession(),
       ]);

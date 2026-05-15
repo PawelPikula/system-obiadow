@@ -112,6 +112,9 @@ export default function RestauracjaPanel() {
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceNumbers, setInvoiceNumbers] = useState({ revenue: null, cost: null });
 
+  // Publikowanie menu
+  const [publishing, setPublishing] = useState(false);
+
   // Formularz i autouzupełnianie
   const [dishDictionary, setDishDictionary] = useState([]);
   const [newName, setNewName] = useState('');
@@ -587,13 +590,50 @@ export default function RestauracjaPanel() {
     setShowSuggestions(false);
   };
 
+  async function handlePublishMenu() {
+    const unpublished = dailyMenu.filter(i => !i.is_published);
+    if (unpublished.length === 0) return;
+    setPublishing(true);
+    const { error } = await supabase
+      .from('menu_items')
+      .update({ is_published: true })
+      .eq('available_date', selectedDate)
+      .eq('is_published', false);
+    setPublishing(false);
+    if (error) {
+      toast.error('Błąd publikowania: ' + error.message);
+    } else {
+      toast.success(`Menu na ${selectedDate} opublikowane! Klienci mogą teraz zamawiać.`);
+      fetchRestaurantData();
+    }
+  }
+
+  async function handleUnpublishMenu() {
+    const published = dailyMenu.filter(i => i.is_published);
+    if (published.length === 0) return;
+    setPublishing(true);
+    const { error } = await supabase
+      .from('menu_items')
+      .update({ is_published: false })
+      .eq('available_date', selectedDate)
+      .eq('is_published', true);
+    setPublishing(false);
+    if (error) {
+      toast.error('Błąd cofania publikacji: ' + error.message);
+    } else {
+      toast.success(`Menu na ${selectedDate} jest teraz robocze. Klienci nie widzą dań.`);
+      fetchRestaurantData();
+    }
+  }
+
   async function handleAddDish(e) {
     e.preventDefault();
-    const { error } = await supabase.from('menu_items').insert([{ 
-      name: newName, 
-      price: parseFloat(newPrice), 
+    const { error } = await supabase.from('menu_items').insert([{
+      name: newName,
+      price: parseFloat(newPrice),
       available_date: selectedDate,
-      max_quantity: parseInt(newMaxQty) || null
+      max_quantity: parseInt(newMaxQty) || null,
+      is_published: false,
     }]);
 
     if (!error) {
@@ -637,8 +677,9 @@ export default function RestauracjaPanel() {
     const { error } = await supabase.from('menu_items').insert([{
       name: dish.name,
       price: dish.price,
-      max_quantity: dish.max_quantity, // Added
+      max_quantity: dish.max_quantity,
       available_date: selectedDate,
+      is_published: false,
     }]);
     if (error) {
       toast.error('Błąd kopiowania: ' + error.message);
@@ -651,11 +692,12 @@ export default function RestauracjaPanel() {
   async function handleCopyAll() {
     const items = pastMenuItems
       .filter(i => i.available_date === copySourceDate)
-      .map(d => ({ 
-        name: d.name, 
-        price: d.price, 
-        max_quantity: d.max_quantity, // Added
-        available_date: selectedDate 
+      .map(d => ({
+        name: d.name,
+        price: d.price,
+        max_quantity: d.max_quantity,
+        available_date: selectedDate,
+        is_published: false,
       }));
     if (items.length === 0) return;
     setCopyingAll(true);
@@ -1026,17 +1068,76 @@ export default function RestauracjaPanel() {
                 </div>
 
                 <div className="glass p-6 rounded-3xl shadow-lg border border-slate-200/50">
-                  <h2 className="text-lg font-heading font-black mb-5 text-slate-800">Menu zaplanowane na ten dzień:</h2>
-                  {dailyMenu.length === 0 ? <p className="text-slate-500 italic text-center py-6 bg-white/40 rounded-2xl border border-dashed border-slate-300">Brak dań.</p> : (
-                    <ul className="space-y-3">
-                      {dailyMenu.map(item => (
-                        <li key={item.id} className="flex justify-between items-center p-4 bg-white/60 rounded-2xl border border-slate-200/50 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">
-                          <div><p className="font-bold text-slate-800">{item.name}</p><p className="text-indigo-600 font-black text-sm">{item.price} zł</p></div>
-                          <button onClick={() => handleDeleteDish(item.id)} className="text-red-500 font-bold text-xs bg-white px-3 py-2 rounded-xl border border-red-100 shadow-sm hover:bg-red-50 hover:border-red-200 transition-all">USUŃ</button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {(() => {
+                    const unpublishedCount = dailyMenu.filter(i => !i.is_published).length;
+                    const publishedCount = dailyMenu.filter(i => i.is_published).length;
+                    const allPublished = dailyMenu.length > 0 && unpublishedCount === 0;
+                    const allUnpublished = dailyMenu.length > 0 && publishedCount === 0;
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-5">
+                          <h2 className="text-lg font-heading font-black text-slate-800">Menu zaplanowane na ten dzień:</h2>
+                          {dailyMenu.length > 0 && (
+                            <span className={`text-xs font-black px-3 py-1.5 rounded-full ${allPublished ? 'bg-green-100 text-green-700' : allUnpublished ? 'bg-amber-100 text-amber-700' : 'bg-orange-100 text-orange-700'}`}>
+                              {allPublished ? 'OPUBLIKOWANE' : allUnpublished ? 'ROBOCZE' : `${unpublishedCount} ROBOCZE`}
+                            </span>
+                          )}
+                        </div>
+
+                        {dailyMenu.length > 0 && unpublishedCount > 0 && (
+                          <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between gap-3">
+                            <p className="text-sm text-amber-800 font-semibold">
+                              {unpublishedCount === dailyMenu.length
+                                ? 'Menu jest robocze — klienci nie widzą żadnych dań.'
+                                : `${unpublishedCount} dań jest roboczych i niewidocznych dla klientów.`}
+                            </p>
+                            <button
+                              onClick={handlePublishMenu}
+                              disabled={publishing}
+                              className="shrink-0 bg-gradient-to-br from-green-500 to-emerald-600 text-white font-black text-sm px-5 py-2.5 rounded-xl shadow-md hover:from-green-600 hover:to-emerald-700 hover:shadow-lg active:scale-95 transition-all disabled:opacity-60"
+                            >
+                              {publishing ? 'Publikowanie…' : 'Opublikuj menu'}
+                            </button>
+                          </div>
+                        )}
+
+                        {dailyMenu.length > 0 && allPublished && (
+                          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-2xl flex items-center justify-between gap-3">
+                            <p className="text-sm text-green-800 font-semibold">Menu opublikowane — klienci mogą zamawiać.</p>
+                            <button
+                              onClick={handleUnpublishMenu}
+                              disabled={publishing}
+                              className="shrink-0 text-xs font-bold text-slate-600 bg-white border border-slate-200 px-3 py-1.5 rounded-xl hover:bg-slate-50 transition-all disabled:opacity-60"
+                            >
+                              {publishing ? '…' : 'Cofnij publikację'}
+                            </button>
+                          </div>
+                        )}
+
+                        {dailyMenu.length === 0
+                          ? <p className="text-slate-500 italic text-center py-6 bg-white/40 rounded-2xl border border-dashed border-slate-300">Brak dań.</p>
+                          : (
+                            <ul className="space-y-3">
+                              {dailyMenu.map(item => (
+                                <li key={item.id} className={`flex justify-between items-center p-4 rounded-2xl border transition-all backdrop-blur-sm hover:shadow-md ${item.is_published ? 'bg-white/60 border-slate-200/50 hover:bg-white' : 'bg-amber-50/60 border-amber-200/50 hover:bg-amber-50'}`}>
+                                  <div className="flex items-center gap-3">
+                                    {!item.is_published && (
+                                      <span className="text-[10px] font-black bg-amber-200 text-amber-800 px-2 py-0.5 rounded-md uppercase tracking-wide">Roboczy</span>
+                                    )}
+                                    <div>
+                                      <p className="font-bold text-slate-800">{item.name}</p>
+                                      <p className="text-indigo-600 font-black text-sm">{item.price} zł{item.max_quantity ? ` · limit: ${item.max_quantity}` : ''}</p>
+                                    </div>
+                                  </div>
+                                  <button onClick={() => handleDeleteDish(item.id)} className="text-red-500 font-bold text-xs bg-white px-3 py-2 rounded-xl border border-red-100 shadow-sm hover:bg-red-50 hover:border-red-200 transition-all">USUŃ</button>
+                                </li>
+                              ))}
+                            </ul>
+                          )
+                        }
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
