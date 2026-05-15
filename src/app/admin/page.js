@@ -76,6 +76,11 @@ export default function AdminPanel() {
     }
   }
 
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace('/login');
+  }
+
   async function assignCompany(userId, newCompanyId) {
     setUpdatingId(userId);
     const value = newCompanyId === 'null' ? null : newCompanyId;
@@ -273,9 +278,14 @@ export default function AdminPanel() {
           <h1 className="text-3xl font-heading font-black text-slate-800 flex items-center gap-3">
             <span className="text-4xl">💼</span> Panel Administratora
           </h1>
-          <Link href="/" className="px-5 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">
-            Wróć do sklepu
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/" className="px-5 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-white hover:shadow-md transition-all backdrop-blur-sm">
+              Wróć do sklepu
+            </Link>
+            <button onClick={handleLogout} className="px-5 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm font-bold text-red-600 hover:bg-red-100 hover:shadow-md transition-all">
+              Wyloguj
+            </button>
+          </div>
         </div>
 
         {/* ZAKŁADKI */}
